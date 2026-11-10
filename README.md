@@ -5,7 +5,7 @@ Professor: Eng. Carlos Andrés Sierra, M.Sc.
 
 | Student code | Name |
 |---|---|
-| 20231020006 | Juan Rangel |
+| 20231020006 | Juan Sebastián Rangel Pinto |
 | 20231020055 | Jhonatan David Vergara Jiménez |
 | 20231020064 | Julián Pulido |
 
