@@ -18,3 +18,8 @@ airflow/logs/
 .DS_Store
 .vscode/
 .idea/
+# course PDFs (private, not for the repo)
+Talleres_proyecto/
+# local notes for the AI assistant, not part of the project
+CLAUDE.md
+.claude/

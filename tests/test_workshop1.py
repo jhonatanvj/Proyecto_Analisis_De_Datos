@@ -2,9 +2,11 @@
 from datetime import datetime, timezone
 
 from volcano_pipeline.normalization.canonical import (content_hash, gvp_eruption_date,
+                                                      map_gvp_eruption, map_hans_notice,
                                                       map_usgs_feature)
 from volcano_pipeline.normalization.geo import haversine_km, normalize_longitude, valid_coordinates
 from volcano_pipeline.sources.usgs_feed import new_or_changed
+from volcano_pipeline.sources.usgs_hans import new_notices, reject_reason, valid_vnum
 from volcano_pipeline.sources.weekly_report import parse_rss, parse_title, parse_week_range
 from volcano_pipeline.storage.raw_landing import landing_name, save_raw
 
@@ -15,6 +17,32 @@ RSS = b"""<?xml version="1.0"?>
 <description>Test</description><pubDate>Wed, 05 Nov 2025 23:00:00 GMT</pubDate>
 <georss:point>37.748 14.999</georss:point></item>
 </channel></rss>"""
+
+
+# Real format observed on 2026-11-09: ISO-8859-1, generic <link>, vnum only in <guid>,
+# status as a "- New/Continuing Eruptive Activity" suffix.
+RSS_2026 = """<?xml version="1.0" encoding="ISO-8859-1"?>
+<rss version="2.0" xmlns:georss="http://www.georss.org/georss"><channel>
+<item><title>Great Sitkin (United States) - Report for 8 October-14 October 2026 - Continuing Eruptive Activity</title>
+<description>&lt;p&gt;Lava effusion continued in Great Sitkin\xbfs summit crater.&lt;/p&gt;</description>
+<link>https://volcano.si.edu/reports_weekly.cfm</link>
+<guid isPermaLink="true">https://volcano.si.edu/reports_weekly.cfm#vn_311120</guid>
+<pubDate>Thu, 15 Oct 2026 03:11:08 -0400</pubDate>
+<georss:point>52.0760 -176.1300</georss:point></item>
+<item><title>Krakatau (Indonesia) - Report for 8 October-14 October 2026 - New Eruptive Activity</title>
+<description>x</description><link>https://volcano.si.edu/reports_weekly.cfm</link>
+<guid isPermaLink="true">https://volcano.si.edu/reports_weekly.cfm#vn_262000</guid>
+<pubDate>Thu, 15 Oct 2026 03:11:08 -0400</pubDate></item>
+</channel></rss>""".encode("latin-1")
+
+
+def test_parse_rss_2026_format():
+    a, b = parse_rss(RSS_2026)
+    assert a["volcano_number"] == 311120 and a["country"] == "United States"
+    assert a["status"] == "ONGOING" and b["status"] == "NEW"
+    assert (a["week_start"], a["week_end"]) == ("2026-10-08", "2026-10-14")
+    assert a["pub_date_utc"] == "2026-10-15T07:11:08+00:00"
+    assert b["latitude"] is None
 
 
 def test_landing_name_format():
@@ -63,6 +91,47 @@ def test_gvp_dates():
     assert gvp_eruption_date(2021, 9, 19) == ("2021-09-19T00:00:00+00:00", "day")
     assert gvp_eruption_date(1985, 0, 0)[1] == "year"
     assert gvp_eruption_date(-500, None, None) == (None, "bce")
+
+
+def test_gvp_eruption_uses_geometry_coordinates():
+    # The eruptions layer has no Latitude/Longitude properties (verified 2026-11-09)
+    props = {"Volcano_Number": 342110, "Eruption_Number": 10750, "ExplosivityIndexMax": 2,
+             "StartDateYear": 1690, "StartDateMonth": 0, "StartDateDay": 0,
+             "_lat": 14.382, "_lon": -90.601}
+    e = map_gvp_eruption(props)
+    assert (e["latitude"], e["longitude"]) == (14.382, -90.601)
+    assert e["timestamp"] == "1690-01-01T00:00:00+00:00" and e["severity"] == 2
+
+
+HANS_ROW = {"volcano_name": "Great Sitkin", "vnum": "311120", "notice_type_cd": "DU",
+            "notice_identifier": "DOI-USGS-AVO-2026-11-09T20:51:49+00:00",
+            "sent_utc": "2026-11-09 21:09:11", "sent_unixtime": 1794258551,
+            "color_code": "ORANGE", "alert_level": "WATCH",
+            "notice_url": "https://volcanoes.usgs.gov/hans-public/notice/DOI-USGS-AVO-2026-11-09T20:51:49+00:00"}
+
+
+def test_hans_mapping():
+    e = map_hans_notice(HANS_ROW, {311120: (52.0765, -176.1109)})
+    assert e["event_id"] == "usgs_hans:311120:DOI-USGS-AVO-2026-11-09T20:51:49+00:00"
+    assert e["event_type"] == "alert_notice" and e["severity"] == 3
+    assert e["timestamp"] == "2026-11-09T21:09:11+00:00"      # matches sent_utc
+    assert e["latitude"] == 52.0765
+
+
+def test_hans_vnum_and_new_notices():
+    assert valid_vnum("311120") and not valid_vnum("0") and not valid_vnum("999999")
+    assert not valid_vnum(None)
+    seen = {("311120", HANS_ROW["notice_identifier"])}
+    assert new_notices([HANS_ROW], seen) == []
+    assert new_notices([{**HANS_ROW, "notice_identifier": "X"}], seen)[0]["notice_identifier"] == "X"
+
+
+def test_hans_reject_reasons():
+    assert reject_reason(HANS_ROW) is None
+    assert reject_reason({**HANS_ROW, "vnum": None}) == "region_level_notice"
+    assert reject_reason({**HANS_ROW, "vnum": "999999"}) == "invalid_vnum"
+    assert reject_reason({**HANS_ROW, "notice_identifier": None, "sent_unixtime": 0}) == "no_notice_issued"
+    assert reject_reason({**HANS_ROW, "alert_level": "UNASSIGNED"}) == "unknown_alert_level"
 
 
 def test_usgs_mapping_and_watermark():

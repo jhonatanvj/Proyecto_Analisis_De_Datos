@@ -7,8 +7,10 @@ erDiagram
     EVENT ||--o| ERUPTION : "is a"
     EVENT ||--o| EARTHQUAKE : "is a"
     EVENT ||--o| ACTIVITY_REPORT : "is a"
+    EVENT ||--o| VOLCANO_ALERT : "is a"
     VOLCANO ||--o{ ERUPTION : "has"
     VOLCANO ||--o{ ACTIVITY_REPORT : "reported in"
+    VOLCANO ||--o{ VOLCANO_ALERT : "alert notices"
     VOLCANO ||--o{ VOLCANO_EARTHQUAKE : "near"
     EARTHQUAKE ||--o{ VOLCANO_EARTHQUAKE : "near"
 
@@ -54,7 +56,9 @@ erDiagram
               int elevation_m
               int last_eruption_year
               float latitude
-              float longitude }
+              float longitude
+              bool is_holocene
+              text observatory }
     ERUPTION { text event_id PK
                int eruption_number UK
                int volcano_number FK
@@ -76,3 +80,10 @@ erDiagram
                       date week_start
                       date week_end
                       text report_status }
+    VOLCANO_ALERT { text event_id PK
+                    int volcano_number FK
+                    text notice_identifier
+                    text alert_level
+                    text color_code
+                    text previous_alert_level
+                    timestamptz sent_utc }

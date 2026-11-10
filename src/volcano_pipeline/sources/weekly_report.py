@@ -1,15 +1,21 @@
 """Smithsonian / USGS Weekly Volcanic Activity Report RSS (incremental, weekly).
 
-Item titles look like ``Etna (Italy) - Report for 29 October-4 November 2025 - NEW``
-and links like ``https://volcano.si.edu/showreport.cfm?wvar=GVP.WVAR20251029-211060``
-(week start date + Smithsonian volcano number). The parser extracts both and keeps
-the title-derived values as a fallback so that a format change is detected early.
+Format observed on 2026-11-09 (the feed is ISO-8859-1 encoded):
+
+* title: ``Krakatau (Indonesia) - Report for 8 October-14 October 2026 - New Eruptive Activity``
+  (or ``- Continuing Eruptive Activity``);
+* link: the generic ``https://volcano.si.edu/reports_weekly.cfm`` page;
+* guid: ``https://volcano.si.edu/reports_weekly.cfm#vn_311120`` (Smithsonian volcano number).
+
+Older items used ``- NEW`` and links like ``showreport.cfm?wvar=GVP.WVAR20251029-211060``;
+both formats are still parsed so that a format change is detected early.
 """
 from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from datetime import timezone
 from email.utils import parsedate_to_datetime
 
 MONTHS = {m: i for i, m in enumerate(
@@ -18,8 +24,9 @@ MONTHS = {m: i for i, m in enumerate(
 
 TITLE_RE = re.compile(
     r"^(?P<name>.+?)\s*\((?P<country>[^)]*)\)\s*-\s*Report for\s+(?P<range>.+?)"
-    r"(?:\s*-\s*(?P<status>NEW|New|new))?\s*$")
+    r"(?:\s*-\s*(?P<status>(?:New|Continuing|Ongoing|NEW)\b[A-Za-z /]*))?\s*$")
 WVAR_RE = re.compile(r"WVAR(?P<date>\d{8})-(?P<vnum>\d{6})")
+GUID_VNUM_RE = re.compile(r"vn_(?P<vnum>\d{6})")
 RANGE_RE = re.compile(
     r"(?P<d1>\d{1,2})\s*(?P<m1>[A-Za-z]+)?\s*(?P<y1>\d{4})?\s*-\s*"
     r"(?P<d2>\d{1,2})\s+(?P<m2>[A-Za-z]+)\s+(?P<y2>\d{4})")
@@ -52,7 +59,8 @@ def parse_title(title: str) -> dict:
         "country": m["country"].strip(),
         "week_start": start,
         "week_end": end,
-        "status": "NEW" if m["status"] else "ONGOING",
+        "status": "NEW" if (m["status"] or "").upper().startswith("NEW") else "ONGOING",
+        "status_raw": m["status"],
         "title_parse_ok": start is not None,
     }
 
@@ -63,16 +71,18 @@ def parse_rss(content: bytes) -> list[dict]:
     for it in root.iter("item"):
         title = (it.findtext("title") or "").strip()
         link = (it.findtext("link") or "").strip()
-        rec = {"title": title, "link": link,
+        guid = (it.findtext("guid") or "").strip()
+        rec = {"title": title, "link": link, "guid": guid,
                "description": (it.findtext("description") or "").strip(),
                "pub_date_raw": it.findtext("pubDate"),
                **parse_title(title)}
         w = WVAR_RE.search(link)
-        rec["volcano_number"] = int(w["vnum"]) if w else None
+        g = GUID_VNUM_RE.search(guid)
+        rec["volcano_number"] = int(g["vnum"]) if g else int(w["vnum"]) if w else None
         if w and not rec["week_start"]:
             rec["week_start"] = datetime.strptime(w["date"], "%Y%m%d").date().isoformat()
         try:
-            rec["pub_date_utc"] = parsedate_to_datetime(rec["pub_date_raw"]).isoformat()
+            rec["pub_date_utc"] = parsedate_to_datetime(rec["pub_date_raw"]).astimezone(timezone.utc).isoformat()
         except (TypeError, ValueError):
             rec["pub_date_utc"] = None
         point = it.findtext(GEORSS)

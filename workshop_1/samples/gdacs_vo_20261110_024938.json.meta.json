@@ -1,0 +1,11 @@
+{
+  "source_id": "gdacs_vo",
+  "retrieved_utc": "2026-11-10T02:49:38.221459+00:00",
+  "url": "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=VO",
+  "bytes": 9239,
+  "sha256": "c67733e60fdef4c73cde423e66e8f51e56b0c7a11fcf8749516065d2a5945099",
+  "headers": {
+    "Content-Type": "application/json; charset=utf-8",
+    "Date": "Tue, 10 Nov 2026 02:49:40 GMT"
+  }
+}

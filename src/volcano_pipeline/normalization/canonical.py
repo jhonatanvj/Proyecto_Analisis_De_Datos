@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from ..sources.usgs_hans import ALERT_LEVELS
 from .geo import normalize_longitude
 
 CANONICAL_FIELDS = [
@@ -87,19 +88,51 @@ def map_usgs_csv_row(row: dict) -> dict:
 
 
 def map_gvp_eruption(props: dict) -> dict:
+    """GVP eruption feature properties (from ``gvp.parse_features``) -> canonical event.
+
+    The eruptions layer has no Latitude/Longitude properties: the position is only in
+    the GeoJSON geometry, exposed by ``parse_features`` as ``_lat``/``_lon``.
+    """
     ts, _precision = gvp_eruption_date(
         props.get("StartDateYear"), props.get("StartDateMonth"), props.get("StartDateDay"))
+    lat = props.get("Latitude", props.get("_lat"))
+    lon = props.get("Longitude", props.get("_lon"))
     return {
         "event_id": f"gvp_eruption:{props.get('Eruption_Number')}",
         "source": "gvp_eruptions",
         "event_type": "eruption",
         "timestamp": ts,
-        "latitude": props.get("Latitude"),
-        "longitude": props.get("Longitude"),
+        "latitude": lat,
+        "longitude": normalize_longitude(lon) if lon is not None else None,
         "severity": props.get("ExplosivityIndexMax"),
         "severity_unit": "VEI (0-8, log scale of erupted tephra volume)",
         "raw_reference": f"https://volcano.si.edu/volcano.cfm?vn={props.get('Volcano_Number')}",
         "content_hash": content_hash(props),
+    }
+
+
+def map_hans_notice(row: dict, volcano_coords: dict[int, tuple[float, float]]) -> dict:
+    """USGS HANS monitored/elevated row -> canonical event.
+
+    Severity is the official USGS volcano alert level as an ordinal
+    (1=NORMAL, 2=ADVISORY, 3=WATCH, 4=WARNING); the aviation colour code goes to
+    the ``volcano_alert`` domain table. HANS rows carry no coordinates, so the
+    position comes from the volcano table (``volcano_coords[vnum] = (lat, lon)``).
+    """
+    vnum = int(row["vnum"])
+    lat, lon = volcano_coords.get(vnum, (None, None))
+    level = (row.get("alert_level") or "").upper()
+    return {
+        "event_id": f"usgs_hans:{vnum}:{row['notice_identifier']}",
+        "source": "usgs_hans",
+        "event_type": "alert_notice",
+        "timestamp": _ms_to_utc(row["sent_unixtime"] * 1000) if row.get("sent_unixtime") else None,
+        "latitude": lat,
+        "longitude": lon,
+        "severity": ALERT_LEVELS.get(level),
+        "severity_unit": "USGS volcano alert level (1=NORMAL, 2=ADVISORY, 3=WATCH, 4=WARNING)",
+        "raw_reference": row.get("notice_url") or row["notice_identifier"],
+        "content_hash": content_hash(row),
     }
 
 

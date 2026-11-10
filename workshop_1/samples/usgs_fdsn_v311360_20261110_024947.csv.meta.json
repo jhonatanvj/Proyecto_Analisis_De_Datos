@@ -1,0 +1,12 @@
+{
+  "source_id": "usgs_fdsn",
+  "retrieved_utc": "2026-11-10T02:49:47.653361+00:00",
+  "url": "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv&orderby=time-asc&latitude=54.756&longitude=-163.97&maxradiuskm=30&starttime=2025-11-10&endtime=2026-11-10&minmagnitude=1.0",
+  "bytes": 17067,
+  "sha256": "1d864ef6d0c7a60a864ee1d22d07b917ed6bd24516e64ab3ce5fef2fddee6dab",
+  "headers": {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Date": "Tue, 10 Nov 2026 02:49:50 GMT",
+    "Last-Modified": "Tue, 10 Nov 2026 02:49:50 GMT"
+  }
+}

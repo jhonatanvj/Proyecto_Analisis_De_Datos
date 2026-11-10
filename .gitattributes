@@ -1,0 +1,5 @@
+# Raw samples and fixtures must stay byte-for-byte as downloaded (their sha256 is in the .meta.json)
+workshop_1/samples/** -text
+tests/fixtures/*.json -text
+tests/fixtures/*.xml -text
+data/raw/** -text

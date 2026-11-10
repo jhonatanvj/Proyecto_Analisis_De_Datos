@@ -1,0 +1,11 @@
+{
+  "source_id": "gvp_volcanoes",
+  "retrieved_utc": "2026-11-10T02:49:40.115589+00:00",
+  "url": "https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=GVP-VOTW%3ASmithsonian_VOTW_Holocene_Volcanoes&outputFormat=application%2Fjson&CQL_FILTER=Country%3D%27United+States%27",
+  "bytes": 339788,
+  "sha256": "9d1103c1819bf478cd116461f48690faa4039742c78ad749d8e2b2d5e471e4db",
+  "headers": {
+    "Date": "Tue, 10 Nov 2026 02:49:43 GMT",
+    "Content-Type": "application/json;charset=UTF-8"
+  }
+}

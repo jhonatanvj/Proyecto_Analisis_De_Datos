@@ -1,16 +1,14 @@
--- =============================================================================
--- Volcanic Activity Monitoring - canonical schema DRAFT (Workshop #1)
--- Target: PostgreSQL 16 + PostGIS 3. Final DDL is delivered in Workshop #2.
--- All timestamps are UTC (timestamptz); coordinates are WGS84 (EPSG:4326).
--- =============================================================================
+-- First draft of the schema (Workshop 1). The final version comes with Workshop 2.
+-- PostgreSQL 16 + PostGIS. Times are stored in UTC and coordinates in WGS84 (EPSG:4326).
+-- Scope: US volcanoes (GVP list filtered by country, plus the volcanoes in USGS HANS).
 CREATE EXTENSION IF NOT EXISTS postgis;
 
--- ----------------------------------------------------------- common model ---
+-- Tables shared by every team (course data model)
 CREATE TABLE source (
     source_id     text PRIMARY KEY,               -- e.g. 'usgs_feed'
     name          text NOT NULL,
     url           text NOT NULL,
-    format        text NOT NULL,                  -- geojson | csv | rss_xml | json
+    format        text NOT NULL,                  -- geojson | csv | json | rss_xml
     license       text NOT NULL,
     citation      text,
     role          text CHECK (role IN ('historical','incremental','optional'))
@@ -43,7 +41,7 @@ CREATE TABLE ingestion_state (
 CREATE TABLE event (
     event_id        text PRIMARY KEY,             -- '<namespace>:<source native id>'
     source_id       text NOT NULL REFERENCES source,
-    event_type      text NOT NULL CHECK (event_type IN ('eruption','earthquake','activity_report')),
+    event_type      text NOT NULL CHECK (event_type IN ('eruption','earthquake','alert_notice','activity_report')),
     event_time      timestamptz,                  -- NULL allowed for undated/BCE eruptions
     time_precision  text NOT NULL DEFAULT 'second', -- second|day|month|year|unknown
     latitude        double precision NOT NULL CHECK (latitude BETWEEN -90 AND 90),
@@ -51,7 +49,7 @@ CREATE TABLE event (
     geom            geography(Point, 4326) GENERATED ALWAYS AS
                     (ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography) STORED,
     severity        double precision,
-    severity_unit   text,                         -- 'VEI', 'magnitude (ml)', 'report_status'
+    severity_unit   text,                         -- 'VEI', 'magnitude (ml)', 'alert level 1-4', 'report_status'
     raw_reference   text NOT NULL,                -- original id / URL
     content_hash    char(64) NOT NULL,            -- SHA-256 of the source record (change detection)
     first_seen_run  bigint REFERENCES ingestion_run,
@@ -78,7 +76,7 @@ CREATE TABLE rejected_record (
     rejected_at   timestamptz NOT NULL DEFAULT now()
 );
 
--- ----------------------------------------------------------- domain model ---
+-- Volcano-specific tables
 -- Static geographic entity: one row per Holocene volcano (GVP)
 CREATE TABLE volcano (
     volcano_number      integer PRIMARY KEY,      -- GVP vnum (6 digits)
@@ -95,7 +93,11 @@ CREATE TABLE volcano (
     longitude           double precision NOT NULL,
     geom                geography(Point, 4326) GENERATED ALWAYS AS
                         (ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography) STORED,
-    gvp_db_version      text NOT NULL,
+    is_holocene         boolean NOT NULL DEFAULT true, -- false: only in HANS (e.g. Yellowstone 325010)
+    observatory         text,                     -- HANS obs_abbr: avo, hvo, cvo, calvo, yvo, nmi
+    nvews_threat        text,                     -- HANS NVEWS threat class ('Very High Threat', ...)
+    source_id           text NOT NULL REFERENCES source,  -- 'gvp_volcanoes' or 'usgs_hans'
+    gvp_db_version      text,                     -- NULL for volcanoes that come only from HANS
     content_hash        char(64) NOT NULL
 );
 CREATE INDEX volcano_geom_idx ON volcano USING gist (geom);
@@ -134,6 +136,35 @@ CREATE TABLE volcano_earthquake (
     PRIMARY KEY (volcano_number, event_id)
 );
 
+-- Official USGS alert notices (HANS): one row per (volcano, notice)
+CREATE TABLE volcano_alert (
+    event_id            text PRIMARY KEY REFERENCES event,   -- 'usgs_hans:<vnum>:<notice_identifier>'
+    volcano_number      integer NOT NULL REFERENCES volcano,
+    notice_identifier   text NOT NULL,            -- e.g. 'DOI-USGS-AVO-2026-11-09T20:51:49+00:00'
+    alert_level         text NOT NULL CHECK (alert_level IN ('NORMAL','ADVISORY','WATCH','WARNING')),
+    color_code          text CHECK (color_code IN ('GREEN','YELLOW','ORANGE','RED')),
+    previous_alert_level text,                    -- level before this notice (change detection)
+    previous_color_code text,
+    notice_type         text,                     -- HANS notice_type_cd (DU, IS, VAN, ...)
+    observatory         text,
+    sent_utc            timestamptz NOT NULL,     -- from sent_unixtime
+    notice_url          text,
+    UNIQUE (volcano_number, notice_identifier)
+);
+CREATE INDEX volcano_alert_latest_idx ON volcano_alert (volcano_number, sent_utc DESC);
+
+-- Current state per volcano (also covers volcanoes that never had a notice: NORMAL/GREEN by default)
+CREATE VIEW volcano_current_alert AS
+SELECT DISTINCT ON (v.volcano_number)
+       v.volcano_number, v.name,
+       coalesce(a.alert_level, 'NORMAL') AS alert_level,
+       coalesce(a.color_code, 'GREEN')   AS color_code,
+       a.sent_utc AS alert_since, a.notice_url
+FROM volcano v
+LEFT JOIN volcano_alert a USING (volcano_number)
+ORDER BY v.volcano_number, a.sent_utc DESC NULLS LAST;
+
+-- Optional source: Smithsonian / USGS Weekly Volcanic Activity Report
 CREATE TABLE activity_report (
     event_id            text PRIMARY KEY REFERENCES event,
     volcano_number      integer REFERENCES volcano, -- NULL until linked by name (quarantine otherwise)

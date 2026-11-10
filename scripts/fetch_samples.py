@@ -21,27 +21,28 @@ import json
 import logging
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from volcano_pipeline.config import get_source, load_config, raw_dir, user_agent  # noqa: E402
-from volcano_pipeline.sources import gvp, usgs_fdsn, usgs_feed, weekly_report  # noqa: E402
+from volcano_pipeline.sources import gvp, usgs_fdsn, usgs_feed, usgs_hans, weekly_report  # noqa: E402
 from volcano_pipeline.sources.http import get, make_session  # noqa: E402
 from volcano_pipeline.storage.raw_landing import save_raw  # noqa: E402
 
 SAMPLES = ROOT / "workshop_1" / "samples"
 log = logging.getLogger("fetch_samples")
 
-# Well-known, frequently active volcanoes used for the FDSN sample (GVP volcano numbers)
-# Kilauea, Etna, Popocatepetl, Nevado del Ruiz, La Palma, Aira (Sakurajima), Merapi, Hunga Tonga-Hunga Ha'apai
-CORE_VOLCANOES = [332010, 211060, 341090, 351020, 383010, 282080, 263250, 243040]
-FALLBACK_COORDS = {332010: (19.421, -155.287), 211060: (37.748, 14.999),
-                   341090: (19.023, -98.622), 351020: (4.892, -75.324),
-                   383010: (28.570, -17.830), 282080: (31.593, 130.657),
-                   263250: (-7.54, 110.446), 243040: (-20.536, -175.382)}
+# US volcanoes used for the FDSN sample (GVP volcano numbers): Hawaii, Alaska, Cascades
+# Kilauea, Mauna Loa, Great Sitkin, Shishaldin, Spurr, Mount St. Helens, Rainier
+CORE_VOLCANOES = [332010, 332020, 311120, 311360, 313040, 321050, 321030]
+FALLBACK_COORDS = {332010: (19.421, -155.287), 332020: (19.475, -155.608),
+                   311120: (52.076, -176.13), 311360: (54.756, -163.97),
+                   313040: (61.299, -152.251), 321050: (46.2, -122.18),
+                   321030: (46.853, -121.76)}
+FDSN_SAMPLE_DAYS = 365   # sample window per volcano; the full 2010-> volume is measured with --estimate-volume
 
 
 def _save(resp, source_id, ext, directory, suffix=""):
@@ -52,7 +53,16 @@ def _save(resp, source_id, ext, directory, suffix=""):
 
 
 def fetch_incremental(session, cfg):
-    """Weekly report (RSS + CAP) and USGS feed. Returns the parsed weekly items."""
+    """HANS alert levels, USGS feed and (optional) weekly report. Returns the parsed weekly items."""
+    hans = get_source(cfg, "usgs_hans")
+    for name in ("monitored", "elevated"):
+        try:
+            r = usgs_hans.fetch(session, hans["url"], hans["endpoints"][name])
+            _save(r, "usgs_hans", "json", SAMPLES, suffix=name)
+            log.info("HANS %s: %d rows", name, len(usgs_hans.parse(r.content)))
+        except Exception as exc:
+            log.error("HANS %s failed: %s", name, exc)
+
     items = []
     wk = get_source(cfg, "gvp_weekly_rss")
     try:
@@ -62,7 +72,7 @@ def fetch_incremental(session, cfg):
         log.info("weekly report: %d items", len(items))
         r = get(session, wk["alt_url_cap"])
         _save(r, "gvp_weekly_cap", "xml", SAMPLES)
-    except Exception as exc:  # keep going: evidence of failures is also evidence
+    except Exception as exc:  # log it and continue, a failed source is useful evidence too
         log.error("weekly report failed: %s", exc)
 
     feed = get_source(cfg, "usgs_feed")
@@ -82,7 +92,15 @@ def fetch_incremental(session, cfg):
 
 
 def fetch_historical(session, cfg, weekly_items):
-    # --- GVP Holocene volcanoes: full layer (~1,400 features, small) ---
+    # HANS list of US volcanoes. Notices have no coordinates, so we need this list to place them.
+    hans = get_source(cfg, "usgs_hans")
+    try:
+        r = usgs_hans.fetch(session, hans["url"], hans["endpoints"]["us_volcanoes"])
+        _save(r, "usgs_hans", "json", SAMPLES, suffix="us_volcanoes")
+    except Exception as exc:
+        log.error("HANS US volcano list failed: %s", exc)
+
+    # GVP volcanoes, already filtered to the US by the CQL_FILTER in sources.yaml
     src = get_source(cfg, "gvp_volcanoes")
     volcanoes = {}
     try:
@@ -94,31 +112,34 @@ def fetch_historical(session, cfg, weekly_items):
     except Exception as exc:
         log.error("GVP volcanoes failed: %s", exc)
 
-    # --- GVP Holocene eruptions: full layer to data/raw, filtered sample to samples ---
+    # GVP eruptions: the full layer goes to data/raw and the US ones to samples.
+    # This layer has no Country field, so we filter by the US volcano numbers.
     src = get_source(cfg, "gvp_eruptions")
     try:
         r = gvp.fetch_layer(session, src)
         _save(r, "gvp_eruptions", "geojson", raw_dir(), suffix="full")
     except Exception as exc:
         log.error("GVP eruptions (full) failed: %s", exc)
-    try:
-        params = {**src["params"], "CQL_FILTER": "StartDateYear>=2000"}
-        r = get(session, src["url"], params=params)
-        if b'"features"' not in r.content[:2000] and b"features" not in r.content:
-            raise ValueError("CQL filter not accepted")
-        _save(r, "gvp_eruptions", "geojson", SAMPLES, suffix="since2000")
-    except Exception as exc:
-        log.warning("CQL-filtered eruptions failed (%s); falling back to maxFeatures=500", exc)
-        r = gvp.fetch_layer(session, src, max_features=500)
-        _save(r, "gvp_eruptions", "geojson", SAMPLES, suffix="first500")
+    if volcanoes:
+        try:
+            vn_list = ",".join(str(v) for v in sorted(volcanoes))
+            params = {**src["params"], "CQL_FILTER": f"Volcano_Number IN ({vn_list})"}
+            r = get(session, src["url"], params=params)
+            n = len(gvp.parse_features(r.content))
+            _save(r, "gvp_eruptions", "geojson", SAMPLES, suffix="us")
+            log.info("GVP US eruptions: %d", n)
+        except Exception as exc:
+            log.error("US eruptions (CQL filter) failed: %s", exc)
 
-    # --- USGS FDSN CSV around core volcanoes + volcanoes in the current weekly report ---
+    # FDSN earthquakes around a few well-known volcanoes plus the US ones in this week's report
     fd = get_source(cfg, "usgs_fdsn")
     sp = cfg["spatial"]
-    start = cfg["project"]["historical_start"]
-    end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    vnums = list(dict.fromkeys(CORE_VOLCANOES + [i["volcano_number"] for i in weekly_items
-                                                  if i.get("volcano_number")]))
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(days=FDSN_SAMPLE_DAYS)).strftime("%Y-%m-%d")
+    end = now.strftime("%Y-%m-%d")
+    us_weekly = [i["volcano_number"] for i in weekly_items
+                 if i.get("volcano_number") in volcanoes]       # weekly items of US volcanoes only
+    vnums = list(dict.fromkeys(CORE_VOLCANOES + us_weekly))
     for vn in vnums:
         v = volcanoes.get(vn)
         lat, lon = (v["Latitude"], v["Longitude"]) if v and v.get("Latitude") is not None \
@@ -136,16 +157,16 @@ def fetch_historical(session, cfg, weekly_items):
 
 
 def estimate_volume(session, cfg):
-    """FDSN count per volcano with recent eruptions -> data/raw/usgs_fdsn_counts_*.json."""
+    """FDSN count per selected US volcano (2010 -> today) -> workshop_1/samples/usgs_fdsn_counts_*.json."""
     gfiles = sorted(SAMPLES.glob("gvp_volcanoes_*.geojson"))
     if not gfiles:
         log.error("run without --estimate-volume first (needs the GVP volcano list)")
         return
     vols = gvp.parse_features(gfiles[-1].read_bytes())
     min_year = cfg["spatial"]["volcano_selection"]["min_last_eruption_year"]
-    sel = [v for v in vols if str(v.get("Last_Eruption_Year") or "").lstrip("-").isdigit()
-           and int(v["Last_Eruption_Year"]) >= min_year]
-    log.info("estimating FDSN volume for %d volcanoes (last eruption >= %d)", len(sel), min_year)
+    sel = [v for v in vols if min_year is None
+           or (isinstance(v.get("Last_Eruption_Year"), int) and v["Last_Eruption_Year"] >= min_year)]
+    log.info("estimating FDSN volume for %d volcanoes (min last eruption year: %s)", len(sel), min_year)
     fd = get_source(cfg, "usgs_fdsn")
     sp = cfg["spatial"]
     end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -165,7 +186,9 @@ def estimate_volume(session, cfg):
     out.write_text(json.dumps({"radius_km": sp["volcano_radius_km"], "min_magnitude": sp["min_magnitude"],
                                "start": cfg["project"]["historical_start"], "end": end,
                                "counts": counts}, indent=1))
-    log.info("saved %s (total events, with overlaps: %d)", out.relative_to(ROOT), sum(counts.values()))
+    over = {k: n for k, n in counts.items() if n > usgs_fdsn.MAX_EVENTS_PER_REQUEST}
+    log.info("saved %s (total events, with overlaps: %d; volcanoes above the 20,000 limit: %s)",
+             out.relative_to(ROOT), sum(counts.values()), over or "none")
 
 
 def main():

@@ -1,33 +1,33 @@
-# =============================================================================
-# Volcanic Activity Monitoring - Team 6 - Source catalog
-# One entry per source. This file is read by src/volcano_pipeline/config.py
-# Secrets never go here: use environment variables (.env).
-# =============================================================================
+# Data sources used by the pipeline, one entry per source.
+# src/volcano_pipeline/config.py loads this file. Keys or passwords go in .env, never here.
 
 project:
   hazard: volcanic_activity
-  geographic_scope: global            # all Holocene volcanoes in GVP VOTW
+  geographic_scope: united_states     # HANS alert levels only exist for US volcanoes
+  country_filter: United States       # GVP 'Country' value; ~165 Holocene volcanoes (AK, HI, Cascades, CNMI, ...)
   historical_start: "2010-01-01"      # earthquakes window (eruptions: full Holocene record, analysis from 1960)
   eruption_analysis_start_year: 1960
-  current_window_days: 7              # "current situation" = last 7 days + latest weekly report
+  current_window_days: 7              # "current situation" = current HANS alert level + earthquakes of the last 7 days
   user_agent_env: HTTP_USER_AGENT     # name of the env var holding the User-Agent/contact
 
 spatial:
   volcano_radius_km: 30               # earthquake counted as "near" a volcano within this distance
-  min_magnitude: 2.5                  # minimum magnitude for historical FDSN queries
+  min_magnitude: 1.0                  # US networks are complete at low magnitudes; also applied to the feed
   volcano_selection:                  # which volcanoes get radial FDSN queries
-    min_last_eruption_year: 1900
+    min_last_eruption_year: null      # null = every US volcano (quiet Cascades volcanoes need a baseline too)
 
 indicator:                            # Volcano Activity Indicator (VAI), preliminary - Workshop #4
   weights: {reported: 0.45, seismic: 0.35, eruptive: 0.20}
-  report_scores: {new: 1.0, ongoing: 0.7, recent_4_weeks: 0.3}
+  # R = official USGS alert level (HANS); the aviation colour code is shown, not scored separately
+  alert_level_scores: {NORMAL: 0.0, ADVISORY: 0.4, WATCH: 0.7, WARNING: 1.0}
+  weekly_report_bonus: {new: 0.2, ongoing: 0.1}   # optional source; R is capped at 1.0
   seismic_min_baseline_events: 20     # below this, seismic component = not available
   eruptive_decay_years: 25
   levels: {LOW: 0, MODERATE: 25, ELEVATED: 50, HIGH: 75}
 
 sources:
 
-  # ---------------------------------------------------------------- HISTORICAL
+  # Historical sources
   - source_id: gvp_volcanoes
     name: Smithsonian GVP - Volcanoes of the World - Holocene Volcanoes
     role: historical            # static reference entity (volcano catalog)
@@ -39,6 +39,7 @@ sources:
       request: GetFeature
       typeName: GVP-VOTW:Smithsonian_VOTW_Holocene_Volcanoes
       outputFormat: application/json
+      CQL_FILTER: "Country='United States'"   # server-side filter, verified 2026-11-09 (165 features)
     format: geojson
     auth: none
     rate_limit: "not published - be polite: 1 request per run, cache locally"
@@ -65,6 +66,7 @@ sources:
     format: geojson
     auth: none
     rate_limit: "not published - single bulk request (~11k features), cache locally"
+    scope_note: "layer has no Country field: download the full layer, keep eruptions whose Volcano_Number is a US volcano"
     license: "Smithsonian GVP terms of use; cite database version and DOI"
     citation: >-
       Global Volcanism Program, 2026. [Database] Volcanoes of the World (v. 5.4.0; 7 Aug 2026).
@@ -83,28 +85,32 @@ sources:
       orderby: time-asc
     format: csv
     auth: none
-    rate_limit: "max 20,000 events per request; partition by volcano and by year"
+    rate_limit: "max 20,000 events per request; partition by volcano, then by year (month if needed) when count > 20,000"
     license: "Public domain (U.S. Government). Credit: U.S. Geological Survey"
     citation: "U.S. Geological Survey, Earthquake Hazards Program, ANSS Comprehensive Catalog (ComCat)"
     schedule: "@daily"          # also used to catch revisions with updatedafter=<watermark>
     watermark_field: updated
     duplicate_key: [id]
 
-  # --------------------------------------------------------------- INCREMENTAL
-  - source_id: gvp_weekly_rss
-    name: Smithsonian / USGS Weekly Volcanic Activity Report (RSS)
+  # Incremental sources
+  - source_id: usgs_hans
+    name: USGS HANS public API - volcano alert levels and aviation colour codes
     role: incremental
-    owner: Smithsonian GVP and USGS Volcano Hazards Program
-    url: https://volcano.si.edu/news/WeeklyVolcanoRSS.xml
-    alt_url_cap: https://volcano.si.edu/news/WeeklyVolcanoCAP.xml
-    format: rss_xml
+    owner: U.S. Geological Survey, Volcano Hazards Program
+    url: https://volcanoes.usgs.gov/hans-public/api
+    endpoints:                  # verified 2026-11-09
+      monitored: volcano/getMonitoredVolcanoes     # latest notice per monitored volcano (~69 rows) - polled
+      elevated: volcano/getElevatedVolcanoes       # only volcanoes above NORMAL/GREEN
+      us_volcanoes: volcano/getUSVolcanoes         # ~170 US volcanoes with vnum + coordinates (reference)
+      notice: notice/getNotice/{notice_identifier} # full text of one notice
+    format: json
     auth: none
-    rate_limit: "published weekly (Wednesdays by 23:00 UTC); poll every 6 h with ETag/Last-Modified"
-    license: "Smithsonian GVP terms of use; cite the Weekly Volcanic Activity Report"
-    citation: "Global Volcanism Program, Smithsonian / USGS Weekly Volcanic Activity Report, Sennert, S. (ed.)"
-    schedule: "0 */6 * * *"
-    watermark_field: report_week_end (from item title) + pubDate
-    duplicate_key: [volcano_number, report_week_start]
+    rate_limit: "not published - poll hourly, 1 request per poll"
+    license: "Public domain (U.S. Government). Credit: U.S. Geological Survey Volcano Hazards Program"
+    citation: "U.S. Geological Survey, Volcano Hazards Program, Hazard Notification System (HANS) public API"
+    schedule: "0 * * * *"
+    watermark_field: sent_unixtime
+    duplicate_key: [vnum, notice_identifier]
 
   - source_id: usgs_feed
     name: USGS real-time GeoJSON summary feed (all earthquakes, past 7 days)
@@ -121,7 +127,23 @@ sources:
     watermark_field: properties.updated
     duplicate_key: [id]
 
-  # ------------------------------------------------------------------ OPTIONAL
+  # Optional sources (extra context, not part of the required four)
+  - source_id: gvp_weekly_rss
+    name: Smithsonian / USGS Weekly Volcanic Activity Report (RSS)
+    role: optional              # few US volcanoes per week and the feed was stale for weeks
+    owner: Smithsonian GVP and USGS Volcano Hazards Program
+    url: https://volcano.si.edu/news/WeeklyVolcanoRSS.xml
+    alt_url_cap: https://volcano.si.edu/news/WeeklyVolcanoCAP.xml
+    format: rss_xml             # ISO-8859-1 encoded
+    auth: none
+    rate_limit: "published weekly (Wednesdays by 23:00 UTC); poll every 6 h with ETag/Last-Modified"
+    license: "Smithsonian GVP terms of use; cite the Weekly Volcanic Activity Report"
+    citation: "Global Volcanism Program, Smithsonian / USGS Weekly Volcanic Activity Report, Sennert, S. (ed.)"
+    schedule: "0 */6 * * *"
+    watermark_field: report_week_end (from item title) + pubDate
+    duplicate_key: [volcano_number, report_week_start]
+    enabled: true
+
   - source_id: gdacs_vo
     name: GDACS events API - volcanoes (type VO)
     role: optional
@@ -135,17 +157,4 @@ sources:
     schedule: "0 */6 * * *"
     watermark_field: properties.datemodified
     duplicate_key: [eventid, episodeid]
-    enabled: false
-
-  - source_id: usgs_hans
-    name: USGS HANS public API - elevated US volcanoes
-    role: optional
-    owner: U.S. Geological Survey, Volcano Hazards Program
-    url: https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes
-    format: json
-    auth: none
-    license: "Public domain (U.S. Government)"
-    schedule: "0 * * * *"
-    watermark_field: sent_utc
-    duplicate_key: [vnum, notice_identifier]
     enabled: false

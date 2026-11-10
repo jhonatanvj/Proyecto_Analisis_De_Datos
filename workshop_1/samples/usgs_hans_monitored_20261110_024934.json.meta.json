@@ -1,0 +1,11 @@
+{
+  "source_id": "usgs_hans",
+  "retrieved_utc": "2026-11-10T02:49:34.409129+00:00",
+  "url": "https://volcanoes.usgs.gov/hans-public/api/volcano/getMonitoredVolcanoes",
+  "bytes": 45386,
+  "sha256": "772e5dba8a5c63479b39af96b66a9ac1e95d1941c8305d013756238e4b76aa2a",
+  "headers": {
+    "Date": "Tue, 10 Nov 2026 02:49:37 GMT",
+    "Content-Type": "application/json"
+  }
+}

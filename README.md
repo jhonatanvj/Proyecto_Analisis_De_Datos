@@ -11,11 +11,11 @@ Professor: Eng. Carlos Andrés Sierra, M.Sc.
 
 ## Hazard
 
-Volcanic activity: unrest and eruptions of the ~1,400 volcanoes thought to have been active during the Holocene. The system integrates the **eruption history** and **static characteristics** of each volcano with **current activity reports** and **nearby seismicity**. It produces a **Volcano Activity Indicator** per volcano. The indicator is a monitoring and correlation aid, **not an eruption forecast**.
+Volcanic activity: unrest and eruptions of the volcanoes of the **United States** (Alaska, Hawaii, the Cascades, California, Yellowstone, the Northern Mariana Islands and American Samoa). The system integrates the **eruption history** and **static characteristics** of each volcano with the **official USGS alert level and aviation colour code** and **nearby seismicity**. It produces a **Volcano Activity Indicator** per volcano. The indicator is a monitoring and correlation aid, **not an eruption forecast**.
 
-* **Geographic scope:** global (all Holocene volcanoes in the Smithsonian GVP database).
+* **Geographic scope:** United States: the 165 Holocene volcanoes that GVP lists with `Country = 'United States'`, plus the volcanoes monitored by USGS that GVP keeps outside the Holocene list (e.g. Yellowstone). The USGS HANS alert levels exist only for US volcanoes, so a US scope is the one covered by all four sources.
 * **Historical window:** earthquakes from 2010-01-01 to today. Eruption history covers the whole Holocene record; time-series analysis starts in 1960.
-* **Current situation:** the latest Weekly Volcanic Activity Report and earthquakes from the last 7 days within 30 km of a volcano.
+* **Current situation:** the current USGS alert level / aviation colour code of each volcano and the earthquakes (M ≥ 1.0) of the last 7 days within 30 km of it.
 
 ## Sources
 
@@ -23,9 +23,10 @@ Volcanic activity: unrest and eruptions of the ~1,400 volcanoes thought to have 
 |---|---|---|---|---|
 | `gvp_volcanoes`, `gvp_eruptions` | Smithsonian GVP *Volcanoes of the World* (WFS) | historical | GeoJSON | Cite the database version and DOI (v5.4.0, 7 Aug 2026, doi:10.5479/si.GVP.VOTW5-2026.5.4) |
 | `usgs_fdsn` | USGS FDSN Event Web Service (ComCat) | historical | CSV | Public domain, credit USGS |
-| `gvp_weekly_rss` | Smithsonian / USGS Weekly Volcanic Activity Report | incremental (weekly) | RSS XML (+ CAP) | Cite GVP Weekly Report |
+| `usgs_hans` | USGS HANS public API (alert level + aviation colour code) | incremental (hourly) | JSON | Public domain, credit USGS Volcano Hazards Program |
 | `usgs_feed` | USGS real-time GeoJSON feed `all_week` | incremental (minutes) | GeoJSON | Public domain, credit USGS |
-| `gdacs_vo`, `usgs_hans` | GDACS (VO) / USGS HANS | optional | JSON | see `config/sources.yaml` |
+| `gvp_weekly_rss` | Smithsonian / USGS Weekly Volcanic Activity Report | optional (weekly context) | RSS XML | Cite GVP Weekly Report |
+| `gdacs_vo` | GDACS (VO) | optional, disabled | JSON | see `config/sources.yaml` |
 
 None of these sources needs an API key. Full details (URLs, limits, watermarks, duplicate keys) are in [`config/sources.yaml`](config/sources.yaml) and [`workshop_1/ingestion_contract.md`](workshop_1/ingestion_contract.md).
 
@@ -42,7 +43,7 @@ Docker Compose stack (Workshop #2+): PostgreSQL + PostGIS, Airflow (incremental 
 ├── config/sources.yaml        # one entry per source (URL, format, schedule, watermark, licence)
 ├── src/volcano_pipeline/
 │   ├── config.py              # loads YAML + .env
-│   ├── sources/               # HTTP clients: gvp, usgs_fdsn, usgs_feed, weekly_report
+│   ├── sources/               # HTTP clients: gvp, usgs_fdsn, usgs_feed, usgs_hans, weekly_report
 │   ├── normalization/         # canonical mapping, geo helpers
 │   └── storage/               # raw landing zone (DB repository in Workshop #2)
 ├── data/raw/                  # raw landing zone (git-ignored)
@@ -65,9 +66,9 @@ cp .env.example .env                                     # set HTTP_USER_AGENT w
 python scripts/fetch_samples.py                          # 1st poll: all sources -> workshop_1/samples
 #   ... wait at least 1 hour ...
 python scripts/fetch_samples.py --poll                   # 2nd poll of the incremental sources
-#   ... after the next Wednesday 23:00 UTC ...
-python scripts/fetch_samples.py --poll                   # 3rd poll: new weekly report
-python scripts/fetch_samples.py --estimate-volume        # optional: FDSN counts for all selected volcanoes
+#   ... on a later day (new HANS notices / weekly report) ...
+python scripts/fetch_samples.py --poll                   # 3rd poll
+python scripts/fetch_samples.py --estimate-volume        # FDSN counts for all US volcanoes (~3 min)
 
 jupyter nbconvert --to notebook --execute --inplace notebooks/01_source_profiling.ipynb
 python ingest.py --mode status

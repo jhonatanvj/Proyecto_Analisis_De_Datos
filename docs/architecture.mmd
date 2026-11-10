@@ -1,9 +1,10 @@
 flowchart TB
     subgraph S[Sources]
       direction LR
-      A1[GVP WFS<br/>Holocene volcanoes + eruptions<br/>GeoJSON - historical]
-      A2[USGS FDSN<br/>earthquakes near volcanoes<br/>CSV - historical]
-      B1[GVP/USGS Weekly Report<br/>RSS + CAP - weekly]
+      A1[GVP WFS<br/>US Holocene volcanoes + eruptions<br/>GeoJSON - historical]
+      A2[USGS FDSN<br/>earthquakes within 30 km of US volcanoes<br/>CSV - historical]
+      B1[USGS HANS API<br/>alert level + aviation colour code<br/>JSON - hourly]
+      B3[GVP/USGS Weekly Report<br/>RSS - optional, weekly]
       B2[USGS GeoJSON feed<br/>all_week - every 15 min]
     end
     subgraph AF[Docker Compose]
@@ -17,7 +18,7 @@ flowchart TB
       AN[Analytics views<br/>Volcano Activity Indicator]
       D[Plotly Dash<br/>localhost:8050]
     end
-    A1 & A2 & B1 & B2 --> I
+    A1 & A2 & B1 & B2 & B3 --> I
     O --> I
     I --> R --> N
     N --> DB
