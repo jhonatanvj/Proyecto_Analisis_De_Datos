@@ -1,0 +1,25 @@
+flowchart TB
+    subgraph S[Sources]
+      direction LR
+      A1[GVP WFS<br/>Holocene volcanoes + eruptions<br/>GeoJSON - historical]
+      A2[USGS FDSN<br/>earthquakes near volcanoes<br/>CSV - historical]
+      B1[GVP/USGS Weekly Report<br/>RSS + CAP - weekly]
+      B2[USGS GeoJSON feed<br/>all_week - every 15 min]
+    end
+    subgraph AF[Docker Compose]
+      direction LR
+      O[Airflow DAG<br/>schedule + retries]
+      I[ingest.py<br/>historical / incremental / status]
+      R[(Raw landing zone<br/>source_YYYYMMDD_HHMMSS.ext)]
+      N[Normalize - validate<br/>deduplicate - link to vnum]
+      Q[(Quarantine<br/>rejected_record)]
+      DB[(PostgreSQL + PostGIS<br/>canonical model + domain tables)]
+      AN[Analytics views<br/>Volcano Activity Indicator]
+      D[Plotly Dash<br/>localhost:8050]
+    end
+    A1 & A2 & B1 & B2 --> I
+    O --> I
+    I --> R --> N
+    N --> DB
+    N --> Q
+    DB --> AN --> D

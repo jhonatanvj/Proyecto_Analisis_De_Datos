@@ -1,0 +1,14 @@
+# Workshop 1 (profiling + sample download)
+requests>=2.31
+PyYAML>=6.0
+pandas>=2.1
+numpy>=1.26
+matplotlib>=3.8
+jupyter>=1.0
+pytest>=8.0
+# Workshop 2+ (uncomment when used)
+# psycopg[binary]>=3.1
+# SQLAlchemy>=2.0
+# GeoAlchemy2>=0.14
+# dash>=2.16
+# plotly>=5.20

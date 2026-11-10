@@ -1,0 +1,78 @@
+erDiagram
+    SOURCE ||--o{ INGESTION_RUN : "executed for"
+    SOURCE ||--|| INGESTION_STATE : "has watermark"
+    SOURCE ||--o{ EVENT : "provides"
+    INGESTION_RUN ||--o{ REJECTED_RECORD : "quarantines"
+    EVENT ||--o{ EVENT_GROUP : "grouped in"
+    EVENT ||--o| ERUPTION : "is a"
+    EVENT ||--o| EARTHQUAKE : "is a"
+    EVENT ||--o| ACTIVITY_REPORT : "is a"
+    VOLCANO ||--o{ ERUPTION : "has"
+    VOLCANO ||--o{ ACTIVITY_REPORT : "reported in"
+    VOLCANO ||--o{ VOLCANO_EARTHQUAKE : "near"
+    EARTHQUAKE ||--o{ VOLCANO_EARTHQUAKE : "near"
+
+    SOURCE { text source_id PK
+             text name
+             text url
+             text format
+             text license }
+    INGESTION_RUN { bigint run_id PK
+                    text mode
+                    timestamptz started
+                    timestamptz finished
+                    text status
+                    int rows_in
+                    int rows_new
+                    int rows_rejected }
+    INGESTION_STATE { text source_id PK
+                      text watermark
+                      timestamptz last_success
+                      text last_etag }
+    EVENT { text event_id PK
+            text source_id FK
+            text event_type
+            timestamptz event_time
+            float latitude
+            float longitude
+            float severity
+            text severity_unit
+            text raw_reference
+            char content_hash }
+    EVENT_GROUP { text group_id PK
+                  text event_id PK
+                  text rule
+                  float score }
+    REJECTED_RECORD { bigint rejected_id PK
+                      bigint run_id FK
+                      text reason
+                      jsonb payload }
+    VOLCANO { int volcano_number PK
+              text name
+              text country
+              text primary_type
+              int elevation_m
+              int last_eruption_year
+              float latitude
+              float longitude }
+    ERUPTION { text event_id PK
+               int eruption_number UK
+               int volcano_number FK
+               smallint vei
+               int start_year
+               text activity_type }
+    EARTHQUAKE { text event_id PK
+                 text usgs_id UK
+                 float magnitude
+                 text mag_type
+                 float depth_km
+                 text review_status }
+    VOLCANO_EARTHQUAKE { int volcano_number PK
+                         text event_id PK
+                         float distance_km }
+    ACTIVITY_REPORT { text event_id PK
+                      int volcano_number FK
+                      text volcano_name_raw
+                      date week_start
+                      date week_end
+                      text report_status }
