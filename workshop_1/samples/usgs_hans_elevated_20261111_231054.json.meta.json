@@ -1,0 +1,11 @@
+{
+  "source_id": "usgs_hans",
+  "retrieved_utc": "2026-11-11T23:10:54.868473+00:00",
+  "url": "https://volcanoes.usgs.gov/hans-public/api/volcano/getElevatedVolcanoes",
+  "bytes": 1963,
+  "sha256": "ef24c23314a8a85f49f2238cc7a3bff556e3a964456a80e2aa5983bbc97cc706",
+  "headers": {
+    "Date": "Wed, 11 Nov 2026 23:10:57 GMT",
+    "Content-Type": "application/json"
+  }
+}

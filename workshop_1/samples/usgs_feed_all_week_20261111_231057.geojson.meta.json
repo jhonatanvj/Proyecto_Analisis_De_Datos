@@ -1,0 +1,12 @@
+{
+  "source_id": "usgs_feed",
+  "retrieved_utc": "2026-11-11T23:10:57.274021+00:00",
+  "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson",
+  "bytes": 1342156,
+  "sha256": "52c33fbb46ea3661450e77b00d864976100707fc9b0c82dab45ecb43ec9db2af",
+  "headers": {
+    "Content-Type": "application/json; charset=utf-8",
+    "Date": "Wed, 11 Nov 2026 23:10:55 GMT",
+    "Last-Modified": "Wed, 11 Nov 2026 23:10:55 GMT"
+  }
+}

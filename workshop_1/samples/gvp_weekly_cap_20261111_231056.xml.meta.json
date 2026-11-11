@@ -1,0 +1,14 @@
+{
+  "source_id": "gvp_weekly_cap",
+  "retrieved_utc": "2026-11-11T23:10:56.285787+00:00",
+  "url": "https://volcano.si.edu/news/WeeklyVolcanoCAP.xml",
+  "bytes": 43602,
+  "sha256": "d7e75df01aa9a12a51d941c39dd80e0b3f63b52ff60432286512536793868698",
+  "headers": {
+    "Date": "Wed, 11 Nov 2026 23:10:58 GMT",
+    "Content-Type": "text/xml",
+    "Content-Length": "8640",
+    "ETag": "\"804464efd85cdd1:0\"",
+    "Last-Modified": "Thu, 15 Oct 2026 19:11:09 GMT"
+  }
+}
