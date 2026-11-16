@@ -127,6 +127,20 @@ sources:
     watermark_field: properties.updated
     duplicate_key: [id]
 
+  - source_id: usgs_volcano_updates
+    name: USGS Volcano Hazards Program - Volcano Updates page (web scraping)
+    role: incremental
+    owner: U.S. Geological Survey, Volcano Hazards Program
+    url: https://www.usgs.gov/programs/VHP/volcano-updates
+    format: html                # server-rendered; parsed with BeautifulSoup, stored in Bronze as JSON records
+    auth: none
+    rate_limit: "robots.txt allows /programs/; one request per hour (page is ~6.6 MB)"
+    license: "Public domain (U.S. Government). Credit: U.S. Geological Survey Volcano Hazards Program"
+    citation: "U.S. Geological Survey, Volcano Hazards Program, Volcano Updates"
+    schedule: "@hourly"
+    watermark_field: content_sha256 of the page
+    duplicate_key: [record_type, observatory, notice_url | notice_number | issued_raw]
+
   # Optional sources (extra context, not part of the required four)
   - source_id: gvp_weekly_rss
     name: Smithsonian / USGS Weekly Volcanic Activity Report (RSS)

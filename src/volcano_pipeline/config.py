@@ -43,3 +43,8 @@ def user_agent(cfg: dict[str, Any]) -> str:
 
 def raw_dir() -> Path:
     return Path(os.getenv("RAW_DATA_DIR", ROOT / "data" / "raw"))
+
+
+def datalake_dir(layer: str) -> Path:
+    """datalake_bronze / datalake_silver / datalake_gold under DATALAKE_ROOT (repo root by default)."""
+    return Path(os.getenv("DATALAKE_ROOT", ROOT)) / f"datalake_{layer}"

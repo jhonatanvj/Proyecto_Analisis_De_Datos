@@ -11,6 +11,14 @@ venv/
 data/raw/*
 !data/raw/.gitkeep
 !data/raw/README.md
+# data lake layers (keep folders; samples live in workshop_2/samples)
+datalake_bronze/*
+datalake_silver/*
+datalake_gold/*
+!datalake_*/.gitkeep
+# planning notes
+docs/superpowers/
+.superpowers/
 # docker / db volumes
 pgdata/
 airflow/logs/
