@@ -2,10 +2,15 @@
 can later read the whole folder as one DataFrame (Workshop 3)."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 
 TS = pa.timestamp("ns", tz="UTC")
+# GVP eruptions go back centuries; nanosecond timestamps stop at 1677, microseconds do not
+TS_US = pa.timestamp("us", tz="UTC")
 CAT = pa.dictionary(pa.int32(), pa.string())
 
 LINEAGE = ["bronze_file", "bronze_sha256", "processed_utc"]
@@ -24,7 +29,8 @@ SCHEMAS: dict[str, pa.Schema] = {
         ("event_time", TS), ("updated_time", TS),
         ("latitude", pa.float64()), ("longitude", pa.float64()), ("depth_km", pa.float64()),
         ("mag", pa.float64()), ("mag_type", CAT), ("network", CAT), ("review_status", CAT),
-        ("place", pa.string()), ("mag_missing", pa.bool_()),
+        ("place", pa.string()), ("nearest_vnum", pa.int64()), ("distance_km", pa.float64()),
+        ("mag_missing", pa.bool_()),
         ("is_outlier_mag_iqr", pa.bool_()), ("is_outlier_mag_z", pa.bool_()),
         ("is_outlier_depth_iqr", pa.bool_()), ("is_outlier_depth_z", pa.bool_()),
     ]),
@@ -40,7 +46,7 @@ SCHEMAS: dict[str, pa.Schema] = {
         ("elevation_m", pa.float64()), ("latitude", pa.float64()), ("longitude", pa.float64()),
     ]),
     "eruptions": _schema([
-        ("eruption_number", pa.int64()), ("vnum", pa.int64()), ("start_time", TS),
+        ("eruption_number", pa.int64()), ("vnum", pa.int64()), ("start_time", TS_US),
         ("time_precision", CAT), ("start_year", pa.int64()), ("vei", pa.int64()),
         ("vei_missing", pa.bool_()), ("activity_type", CAT),
         ("latitude", pa.float64()), ("longitude", pa.float64()),
@@ -59,7 +65,20 @@ QUARANTINE_SCHEMA = pa.schema([
 ])
 
 
+def _to_us_utc(value) -> np.datetime64:
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if isinstance(value, datetime):     # also covers pd.Timestamp
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return np.datetime64(value, "us")
+    return np.datetime64("NaT", "us")
+
+
 def _cast(series: pd.Series, typ: pa.DataType) -> pd.Series:
+    if pa.types.is_timestamp(typ) and typ.unit == "us":
+        values = np.array([_to_us_utc(v) for v in series], dtype="datetime64[us]")
+        return pd.Series(values, index=series.index).dt.tz_localize("UTC")
     if pa.types.is_timestamp(typ):
         return pd.to_datetime(series, utc=True, errors="coerce").astype("datetime64[ns, UTC]")
     if pa.types.is_floating(typ):
@@ -82,7 +101,9 @@ def enforce(df: pd.DataFrame, topic: str, schema: pa.Schema | None = None) -> pd
     for field in schema:
         col = df[field.name] if field.name in df.columns else pd.Series([None] * len(df), index=df.index, dtype=object)
         out[field.name] = _cast(col, field.type)
-    return out.reset_index(drop=True)
+    out = out.reset_index(drop=True)
+    out.attrs = dict(df.attrs)
+    return out
 
 
 def to_table(df: pd.DataFrame, schema: pa.Schema) -> pa.Table:

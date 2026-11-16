@@ -1,0 +1,63 @@
+{
+ "source_id": "usgs_volcano_updates",
+ "retrieved_utc": "2026-11-16T01:00:00+00:00",
+ "url": "https://example.test/usgs_volcano_updates",
+ "params": {},
+ "http_status": 200,
+ "content_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+ "record_count": 4,
+ "payload": [
+  {
+   "record_type": "elevated",
+   "observatory": "hvo",
+   "volcano_name": "Kilauea",
+   "vnum": null,
+   "alert_level": "ADVISORY",
+   "color_code": "YELLOW",
+   "as_of_raw": "2026-11-16 17:26:55 UTC",
+   "issued_raw": null,
+   "notice_number": null,
+   "notice_url": "https://volcanoes.usgs.gov/hans2/view/notice/DOI-USGS-HVO-2026-11-16T17:15:12+00:00",
+   "text_html": "HVO Kilauea YELLOW/ADVISORY - The Halema'uma'u eruption of Kīlauea remains paused following episode 56 fountaining on November 5. The summit is reinflating and the episode 57 forecast window is November 18-21."
+  },
+  {
+   "record_type": "elevated",
+   "observatory": "avo",
+   "volcano_name": "Great Sitkin",
+   "vnum": null,
+   "alert_level": "WATCH",
+   "color_code": "ORANGE",
+   "as_of_raw": "2026-11-13 21:04:48 UTC",
+   "issued_raw": null,
+   "notice_number": null,
+   "notice_url": "https://volcanoes.usgs.gov/hans2/view/notice/DOI-USGS-AVO-2026-11-13T19:12:01+00:00",
+   "text_html": "AVO Great Sitkin ORANGE/WATCH - Slow eruption of lava within the summit crater continues; low-level seismicity persists"
+  },
+  {
+   "record_type": "observatory_notice",
+   "observatory": "avo",
+   "volcano_name": "Katmai",
+   "vnum": "312170",
+   "alert_level": "NORMAL",
+   "color_code": "GREEN",
+   "as_of_raw": null,
+   "issued_raw": "Monday, November 16, 2026, 10:48 AM AKST",
+   "notice_number": "2026/A844",
+   "notice_url": null,
+   "text_html": "<span name=\"synopsis\">Resuspended ash observed from 1912 eruption. Aviation color code and alert level remain at GREEN/NORMAL.</span><span name=\"summary\"><p>Strong northwesterly winds in the vicinity of Katmai and the Valley of Ten Thousand Smokes have picked up loose volcanic ash erupted during the 1912 Novarupta-Katmai eruption and are carrying it to the southeast. The National Weather Service has issued a SIGMET for this low-level event and suggests that the maximum cloud height is about 6,000 ft (1.8 km) above sea level.</p><p>This phenomenon is not the result of recent volcanic activity and occurs during times of high winds and dry snow-free conditions in the Katmai area and other young volcanic areas of Alaska. No eruption is in progress. All of the volcanoes of the Katmai area (Griggs, Katmai, Novarupta, Mageik, Martin, Snowy and Trident) remain at Aviation Color Code GREEN and Alert Level NORMAL. Resuspended volcanic ash should be considered hazardous and could be damaging to aircraft and health.</p><p>For more information on volcanic ash and human health, visit the following website: <a href=\"http://volcanoes.usgs.gov/ash/\">http://volcanoes.usgs.gov/ash/</a></p><p>Official warnings about these ash resuspension events are issued by the National Weather Service: <a href=\"https://www.weather.gov/afc/\">https://www.weather.gov/afc/</a></p><p>Forecasts of airborne ash hazard to aircraft: https://www.weather.gov/aawu/. Volcanic Ash Advisories: <a href=\"https://www.weather.gov/vaac/\">https://www.weather.gov/vaac/</a></p><p>Forecasts of ashfall: <a href=\"http://www.weather.gov/afc\">http://www.weather.gov/afc</a></p><p>Air quality hazards and guidance from Alaska Department of Environmental Conservation, Division of Air Quality: <a href=\"http://dec.alaska.gov/Applications/Air/airtoolsweb/Advisories/Index\">http://dec.alaska.gov/Applications/Air/airtoolsweb/Advisories/Index</a></p></span>"
+  },
+  {
+   "record_type": "observatory_notice",
+   "observatory": "hvo",
+   "volcano_name": "KILAUEA",
+   "vnum": "332010",
+   "alert_level": "ADVISORY",
+   "color_code": "YELLOW",
+   "as_of_raw": null,
+   "issued_raw": "Monday, November 16, 2026, 17:26 UTC",
+   "notice_number": null,
+   "notice_url": null,
+   "text_html": "<span name=\"synopsis\"><b>Summary:</b> The Halema'uma'u eruption of Kīlauea remains paused following episode 56 fountaining on November 5. The summit is reinflating and the episode 57 forecast window is November 18-21.</span><span name=\"summary\"><p><strong>Overview:</strong></p><p>The Kīlauea summit eruption within Halema'uma'u is currently paused after episode 56 fountaining ended on November 5. The summit has been steadily reinflating since the end of episode 56, and occasional spatter was visible overnight from both the north and southwest vents. Another fountaining episode remains likely and the current forecast window for episode 57 fountaining is November 18-21.</p><p><strong>Summit Observations:</strong></p><p>Summit webcams recorded strong glow from both the north and southwest vents overnight. Views from the V1cam livestream webcam overnight showed occasional spatter bursts and flames from both vents.  </p><p>Seismic tremor remains elevated during the eruption pause. No earthquakes were located at the summit in the past day.</p><p>The Uēkahuna tiltmeter (UWD) has recorded nearly continuous summit inflation since the end of episode 56 lava fountaining. This morning, UWD has recovered a total of about 14 microradians of inflationary tilt since the end of episode 56.</p><p>The average sulfur dioxide (SO<sub>2</sub>) emission rate recorded by the summit gas monitoring array yesterday, November 15, was about 2,000 tonnes per day. Trade winds this morning are carrying volcanic gases to the southwest.</p><p><strong>Rift Zone Observations:</strong></p><p>Rates of seismicity and ground deformation remain low in the East Rift Zone and Southwest Rift Zone. SO<sub>2</sub> emissions from the East Rift Zone remain below the detection limit. </p><p><strong>Analysis</strong>:</p><p>Following the end of episode 56 on November 5, 2026, summit tiltmeters have recorded a typical post-fountaining recovery, with nearly continuous inflationary tilt at UWD. Based on previous episodes, the ongoing tilt trend, and glow and spatter seen within the eruptive vents, another fountaining episode is likely. The forecast window for episode 57 fountaining is November 18-21. </p><p>Kīlauea has been erupting episodically since December 23, 2024, from two primary vents (north and south) within Halemaʻumaʻu at the summit. Lava fountaining episodes generally last less than 12 hours and are separated by pauses of two or more weeks. </p><p>HVO continues to closely monitor Kīlauea and remains in contact with Hawaiʻi Volcanoes National Park and the Hawaiʻi County Civil Defense Agency regarding eruptive hazards. </p><p><strong>Summary of episode 56:</strong></p><ul><li>Lava fountaining occurred between 12:10 p.m. and 6:01 p.m. on November 5, 2026. </li><li>Maximum fountain heights were about 660 feet (200 meters). Only the north vent produced fountaining.</li><li>Tephra fallout was primarily towards the southwest, in closed areas of Hawai'i Volcanoes National Park, with trace amounts on Highway 11.</li><li>The eruptive plume rose as high as 18,000 feet (5,500 meters) above sea level.</li><li>Tiltmeter data indicate approximately 8 million cubic yards (6 million cubic meters) of lava were erupted, with an average eruption rate of 260 cubic yards (200 cubic meters) per second.</li><li>The Uēkahuna tiltmeter (UWD) recorded a total of 17 microradians of deflationary tilt.</li></ul><p><strong>Hazards:</strong></p><p>Eruptive activity since December 2024 has been occurring within a closed area of Hawai'i Volcanoes National Park. However, recent intrusions highlight that the location of eruptive activity could change. Intrusions can also be hazardous with potential to cause earthquakes, ground cracks, and small landslides. The primary hazards at Kīlauea due to eruptive activity and/or intrusions are:</p><ul><li><strong>Volcanic Gas:</strong> High levels of volcanic gas—primarily water vapor (H<sub>2</sub>O), carbon dioxide (CO<sub>2</sub>), and sulfur dioxide (SO<sub>2</sub>)—are continually released during an eruption. Emissions can remain locally hazardous in the areas immediately downwind of the vents, even when the vents are not actively erupting. SO<sub>2</sub> reacts in the atmosphere to create vog (volcanic air pollution) downwind. SO<sub>2</sub> and vog may cause respiratory and other problems at high concentrations. Further information on vog can be found at <a href=\"https://vog.ivhhn.org/\">https://vog.ivhhn.org/</a></li><li><strong>Tephra: </strong>Small glassy volcanic fragments—volcanic ash, pumice, scoria, Pele’s hair and reticulite—are created by the lava fountains. A combination of fountaining dynamics and wind conditions determines where tephra fall may occur for any given eruption episode. Larger particles fall near the vents while light particles may be wafted greater distances. These particles may be remobilized during windy conditions following recent eruptive episodes. Residents and visitors should minimize exposure to these fragments, which can cause skin, eye, and respiratory irritation. More information and guidance on tephra fall hazards is available at <a href=\"https://seagrant.soest.hawaii.edu/resource-and-guidance-for-volcanic-tephra-fall/\">https://seagrant.soest.hawaii.edu/resource-and-guidance-for-volcanic-tephra-fall/</a> and <a href=\"https://vog.ivhhn.org/sites/default/files/PelesHair_FAQs_v2.pdf\">https://vog.ivhhn.org/sites/default/files/PelesHair_FAQs_v2.pdf</a> </li><li><strong>Lava flows: </strong>Hawaiian lava flows generally advance slowly downslope but destroy everything in their paths. Lava flows that erupt within Halemaʻumaʻu remain confined to the crater, including those during the eruption that started in December 2024. However, intrusive activity could result in lava flows outside of Halemaʻumaʻu. Hazards associated with active or recent lava flows include hot and glassy (sharp) surfaces that can cause serious burns, abrasions, and lacerations upon contact with unprotected or exposed skin; uneven and rough terrain can lead to falls and other injuries; hot temperatures that can cause heat exhaustion or dehydration, or in heavy rain can produce steamy ground-fog that can be acidic, severely limiting visibility and sometimes causing difficulty breathing.</li><li><strong>Earthquakes and ground cracks: </strong>Shallow magma movement and eruptions can produce minor to severe ground fractures and subsidence features. These ground cracks can continue to widen and offset as magma migration continues, may have unstable overhanging edges, and should be avoided. Other significant hazards exist around Kīlauea caldera from Halemaʻumaʻu crater wall instability, ground cracking, and rockfalls that can be enhanced by earthquakes.</li></ul><p>Additionally, close to the eruptive vents, the tephra material on the crater rim is prone to cracking, slumping, and small landslides that sometimes expose hot and molten material within. This underscores the extremely hazardous nature of Kīlauea's caldera rim surrounding Halemaʻumaʻu crater, an area that has been closed to the public since early 2008.</p><p> </p></span>"
+  }
+ ]
+}

@@ -1,0 +1,199 @@
+{
+ "source_id": "gvp_eruptions",
+ "retrieved_utc": "2026-11-16T00:00:00+00:00",
+ "url": "https://example.test/gvp_eruptions",
+ "params": {},
+ "http_status": 200,
+ "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+ "record_count": 5,
+ "payload": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "id": "Smithsonian_VOTW_Holocene_Eruptions.fid--24b39c22_1a1c35c89ae_-7827",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -155.287,
+      19.421
+     ]
+    },
+    "geometry_name": "GeoLocation",
+    "properties": {
+     "Volcano_Number": 332010,
+     "Volcano_Name": "Kilauea",
+     "Eruption_Number": 22380,
+     "Activity_Type": "Confirmed Eruption",
+     "ExplosivityIndexMax": 0,
+     "ExplosivityIndexModifier": null,
+     "ActivityArea": null,
+     "ActivityUnit": null,
+     "StartEvidenceMethod": "Observations: Reported",
+     "StartDateYearModifier": null,
+     "StartDateYear": 2020,
+     "StartDateYearUncertainty": null,
+     "StartDateDayModifier": null,
+     "StartDateMonth": 12,
+     "StartDateDay": 20,
+     "StartDateDayUncertainty": null,
+     "EndDateYearModifier": null,
+     "EndDateYear": 2021,
+     "EndDateYearUncertainty": null,
+     "EndDateDayModifier": null,
+     "EndDateMonth": 5,
+     "EndDateDay": 23,
+     "EndDateDayUncertainty": null
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "Smithsonian_VOTW_Holocene_Eruptions.fid--24b39c22_1a1c35c89ae_-7b8e",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -176.13,
+      52.076
+     ]
+    },
+    "geometry_name": "GeoLocation",
+    "properties": {
+     "Volcano_Number": 311120,
+     "Volcano_Name": "Great Sitkin",
+     "Eruption_Number": 19729,
+     "Activity_Type": "Confirmed Eruption",
+     "ExplosivityIndexMax": null,
+     "ExplosivityIndexModifier": null,
+     "ActivityArea": null,
+     "ActivityUnit": null,
+     "StartEvidenceMethod": "Observations: Reported",
+     "StartDateYearModifier": null,
+     "StartDateYear": 1792,
+     "StartDateYearUncertainty": null,
+     "StartDateDayModifier": null,
+     "StartDateMonth": 5,
+     "StartDateDay": 26,
+     "StartDateDayUncertainty": 5,
+     "EndDateYearModifier": null,
+     "EndDateYear": null,
+     "EndDateYearUncertainty": null,
+     "EndDateDayModifier": null,
+     "EndDateMonth": null,
+     "EndDateDay": null,
+     "EndDateDayUncertainty": null
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "Smithsonian_VOTW_Holocene_Eruptions.fid--24b39c22_1a1c35c89ae_-782a",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -155.287,
+      19.421
+     ]
+    },
+    "geometry_name": "GeoLocation",
+    "properties": {
+     "Volcano_Number": 332010,
+     "Volcano_Name": "Kilauea",
+     "Eruption_Number": 20745,
+     "Activity_Type": "Confirmed Eruption",
+     "ExplosivityIndexMax": 0,
+     "ExplosivityIndexModifier": null,
+     "ActivityArea": "Lower east rift zone (near Kehena)",
+     "ActivityUnit": null,
+     "StartEvidenceMethod": "Isotopic: 14C (uncalibrated)",
+     "StartDateYearModifier": null,
+     "StartDateYear": 1510,
+     "StartDateYearUncertainty": 50,
+     "StartDateDayModifier": null,
+     "StartDateMonth": 0,
+     "StartDateDay": 0,
+     "StartDateDayUncertainty": null,
+     "EndDateYearModifier": null,
+     "EndDateYear": null,
+     "EndDateYearUncertainty": null,
+     "EndDateDayModifier": null,
+     "EndDateMonth": null,
+     "EndDateDay": null,
+     "EndDateDayUncertainty": null
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "Smithsonian_VOTW_Holocene_Eruptions.fid--24b39c22_1a1c35c89ae_-7835",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -155.287,
+      19.421
+     ]
+    },
+    "geometry_name": "GeoLocation",
+    "properties": {
+     "Volcano_Number": 332010,
+     "Volcano_Name": "Kilauea",
+     "Eruption_Number": 20733,
+     "Activity_Type": "Confirmed Eruption",
+     "ExplosivityIndexMax": 0,
+     "ExplosivityIndexModifier": null,
+     "ActivityArea": "SW rift zone",
+     "ActivityUnit": null,
+     "StartEvidenceMethod": "Isotopic: 14C (uncalibrated)",
+     "StartDateYearModifier": "?",
+     "StartDateYear": -4650,
+     "StartDateYearUncertainty": null,
+     "StartDateDayModifier": null,
+     "StartDateMonth": 0,
+     "StartDateDay": 0,
+     "StartDateDayUncertainty": null,
+     "EndDateYearModifier": null,
+     "EndDateYear": null,
+     "EndDateYearUncertainty": null,
+     "EndDateDayModifier": null,
+     "EndDateMonth": null,
+     "EndDateDay": null,
+     "EndDateDayUncertainty": null
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "Smithsonian_VOTW_Holocene_Eruptions.fid--24b39c22_1a1c35c89ae_-7827",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -155.287,
+      19.421
+     ]
+    },
+    "geometry_name": "GeoLocation",
+    "properties": {
+     "Volcano_Number": 999001,
+     "Volcano_Name": "Kilauea",
+     "Eruption_Number": 99999901,
+     "Activity_Type": "Confirmed Eruption",
+     "ExplosivityIndexMax": 0,
+     "ExplosivityIndexModifier": null,
+     "ActivityArea": null,
+     "ActivityUnit": null,
+     "StartEvidenceMethod": "Observations: Reported",
+     "StartDateYearModifier": null,
+     "StartDateYear": 2020,
+     "StartDateYearUncertainty": null,
+     "StartDateDayModifier": null,
+     "StartDateMonth": 12,
+     "StartDateDay": 20,
+     "StartDateDayUncertainty": null,
+     "EndDateYearModifier": null,
+     "EndDateYear": 2021,
+     "EndDateYearUncertainty": null,
+     "EndDateDayModifier": null,
+     "EndDateMonth": 5,
+     "EndDateDay": 23,
+     "EndDateDayUncertainty": null
+    }
+   }
+  ]
+ }
+}
