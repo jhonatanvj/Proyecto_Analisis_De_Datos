@@ -85,4 +85,4 @@ python ingest.py --mode status                                             # wat
 
 ## Workshop deliverables
 
-* **Workshop #1:** [`workshop_1/`](workshop_1/): mapping table, ingestion contract, samples, source status log. Also the notebook, the ER diagram ([`docs/er_diagram.png`](docs/er_diagram.png)) and the draft DDL ([`sql/001_schema_draft.sql`](sql/001_schema_draft.sql)).
+* **Workshop #1:** project definition report ([`docs/project_definition.tex`](docs/project_definition.tex) — build with `pdflatex project_definition.tex`, run twice) and [`workshop_1/`](workshop_1/): mapping table, ingestion contract, samples, source status log. Also the notebook, the ER diagram ([`docs/er_diagram.png`](docs/er_diagram.png)) and the draft DDL ([`sql/001_schema_draft.sql`](sql/001_schema_draft.sql)).
