@@ -25,16 +25,53 @@ Volcanic activity: unrest and eruptions of the volcanoes of the **United States*
 | `usgs_fdsn` | USGS FDSN Event Web Service (ComCat) | historical | CSV | Public domain, credit USGS |
 | `usgs_hans` | USGS HANS public API (alert level + aviation colour code) | incremental (hourly) | JSON | Public domain, credit USGS Volcano Hazards Program |
 | `usgs_feed` | USGS real-time GeoJSON feed `all_week` | incremental (minutes) | GeoJSON | Public domain, credit USGS |
+| `usgs_volcano_updates` | USGS Volcano Updates page (**web scraping**, BeautifulSoup) | incremental (hourly) | HTML → JSON records | Public domain, credit USGS Volcano Hazards Program |
 | `gvp_weekly_rss` | Smithsonian / USGS Weekly Volcanic Activity Report | optional (weekly context) | RSS XML | Cite GVP Weekly Report |
 | `gdacs_vo` | GDACS (VO) | optional, disabled | JSON | see `config/sources.yaml` |
 
 None of these sources needs an API key. Full details (URLs, limits, watermarks, duplicate keys) are in [`config/sources.yaml`](config/sources.yaml) and [`workshop_1/ingestion_contract.md`](workshop_1/ingestion_contract.md).
 
+## Pipeline status
+
+| Layer | Status | Where |
+|---|---|---|
+| Bronze (raw JSON per source and run) | **running**: `bronze_ingestion` DAG, hourly | `datalake_bronze/<source>_YYYYMMDD_HHMMSS.json` |
+| Silver (clean Parquet per topic + quarantine) | **running**: `silver_processing` DAG, FileSensor-triggered | `datalake_silver/<topic>_YYYYMMDD_HHMMSS.parquet` |
+| Gold (governance + analytical summaries, PySpark) | planned (Workshop #3) | `datalake_gold/` |
+| Dashboard (Plotly Dash, `localhost:8050`) | planned (Workshop #4) | `dashboard/` |
+
 ## Architecture
 
-![architecture](docs/architecture.png)
+Medallion pipeline on Apache Airflow 2.10 (Docker Compose, LocalExecutor). The diagram source is [`workshop_2/architecture.mmd`](workshop_2/architecture.mmd), and the full description is in the Workshop 2 report ([`workshop_2/report.tex`](workshop_2/report.tex)). The Workshop 1 design diagram is [`docs/architecture.png`](docs/architecture.png).
 
-Docker Compose stack (Workshop #2+): PostgreSQL + PostGIS, Airflow (incremental schedule), the ingestion application (`ingest.py`), and a Plotly Dash dashboard on `localhost:8050`.
+```
+sources (HANS, USGS feed, GVP WFS, USGS Volcano Updates page)
+   -> bronze_ingestion DAG (@hourly: extract -> validate -> persist)  -> datalake_bronze/*.json
+   -> silver_processing DAG (FileSensor -> pandas preprocessing)     -> datalake_silver/*.parquet (+ quarantine/)
+   -> Gold with PySpark (Workshop 3) -> Dash dashboard (Workshop 4)
+```
+
+## Run the pipeline (Docker)
+
+Requirements: Docker Desktop with at least 4 GB of memory for Docker.
+
+```bash
+cp .env.example .env              # set HTTP_USER_AGENT with a team e-mail
+docker compose up -d --build      # postgres, airflow-init, webserver, scheduler, triggerer
+```
+
+1. Open http://localhost:8080 (user `airflow`, password `airflow` unless changed in `.env`).
+2. Unpause `bronze_ingestion` and `silver_processing`. Bronze runs every hour at minute 0; Silver starts at minute 15 and waits up to 40 min for new Bronze files.
+3. To run them once by hand: trigger `bronze_ingestion`, wait for it to finish, then trigger `silver_processing`. From a terminal:
+
+```bash
+docker compose exec airflow-scheduler airflow dags test bronze_ingestion
+docker compose exec airflow-scheduler airflow dags test silver_processing
+```
+
+Outputs appear on the host in `datalake_bronze/` and `datalake_silver/`. Explore them with [`notebooks/02_silver_exploration.ipynb`](notebooks/02_silver_exploration.ipynb). `docker compose down` stops the stack; add `-v` to also delete the Airflow metadata database.
+
+If the repository lives in a OneDrive/Dropbox folder and Docker reports file access errors, clone it to a folder outside the synced directory.
 
 ## Repository structure
 
@@ -43,20 +80,26 @@ Docker Compose stack (Workshop #2+): PostgreSQL + PostGIS, Airflow (incremental 
 ├── config/sources.yaml        # one entry per source (URL, format, schedule, watermark, licence)
 ├── src/volcano_pipeline/
 │   ├── config.py              # loads YAML + .env
-│   ├── sources/               # HTTP clients: gvp, usgs_fdsn, usgs_feed, usgs_hans, weekly_report
+│   ├── sources/               # HTTP clients + volcano_updates scraper
+│   ├── bronze/                # extraction, payload validation, JSON envelope writer
+│   ├── silver/                # schemas, cleaning per topic, text, outliers, dedup state, runner
 │   ├── normalization/         # canonical mapping, geo helpers
-│   └── storage/               # raw landing zone (DB repository in Workshop #2)
+│   └── storage/               # raw landing zone (Workshop #1)
+├── airflow/                   # Dockerfile, requirements, dags/ (bronze_ingestion, silver_processing)
+├── docker-compose.yml         # Airflow stack
+├── datalake_bronze/ datalake_silver/ datalake_gold/   # data lake layers (git-ignored)
 ├── data/raw/                  # raw landing zone (git-ignored)
 ├── sql/                       # schema definitions (draft DDL)
 ├── dashboard/                 # Dash app (Workshop #4)
 ├── tests/ and tests/fixtures/ # pytest + recorded responses
-├── notebooks/01_source_profiling.ipynb
+├── notebooks/01_source_profiling.ipynb, 02_silver_exploration.ipynb
 ├── scripts/fetch_samples.py   # downloads the Workshop #1 evidence samples
 ├── docs/                      # ER diagram, architecture, report sources
-└── workshop_1/                # mapping, ingestion contract, samples, source status log
+├── workshop_1/                # mapping, ingestion contract, samples, source status log
+└── workshop_2/                # design, preprocessing spec, report, architecture, samples
 ```
 
-## Quick start (Workshop #1)
+## Workshop #1 scripts (local Python)
 
 ```bash
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
@@ -86,3 +129,4 @@ python ingest.py --mode status                                             # wat
 ## Workshop deliverables
 
 * **Workshop #1:** project definition report ([`docs/project_definition.tex`](docs/project_definition.tex) — build with `pdflatex project_definition.tex`, run twice) and [`workshop_1/`](workshop_1/): mapping table, ingestion contract, samples, source status log. Also the notebook, the ER diagram ([`docs/er_diagram.png`](docs/er_diagram.png)) and the draft DDL ([`sql/001_schema_draft.sql`](sql/001_schema_draft.sql)).
+* **Workshop #2:** [`workshop_2/`](workshop_2/): report ([`report.tex`](workshop_2/report.tex)), preprocessing pipeline ([`preprocessing.md`](workshop_2/preprocessing.md)), design, architecture diagram and output samples (Bronze JSON, Silver Parquet, quarantine). Code: [`docker-compose.yml`](docker-compose.yml), [`airflow/dags/bronze_ingestion_dag.py`](airflow/dags/bronze_ingestion_dag.py), [`airflow/dags/silver_processing_dag.py`](airflow/dags/silver_processing_dag.py), `src/volcano_pipeline/{bronze,silver}`. Notebook: [`notebooks/02_silver_exploration.ipynb`](notebooks/02_silver_exploration.ipynb).

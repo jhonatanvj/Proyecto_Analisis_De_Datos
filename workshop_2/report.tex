@@ -1,0 +1,303 @@
+%  Workshop No. 2 - Technical Architecture and Bronze/Silver Pipeline
+%  Volcanic Activity Monitoring System (United States), Team 6
+%
+%  Build: pdflatex report.tex (twice). Screenshots go in workshop_2/figures/ with the names
+%  used below; a missing image prints a framed placeholder instead of breaking the build.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\usepackage[a4paper,margin=2.3cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{figures/}{./}{../docs/}}
+
+\hypersetup{
+  pdftitle={Workshop 2 - Volcanic Activity Monitoring: Technical Architecture and Bronze/Silver Pipeline},
+  pdfauthor={Team 6 - Universidad Distrital Francisco Jose de Caldas},
+  pdfsubject={Data Analysis Programming 2026-II, Workshop No. 2}
+}
+
+\captionsetup{font=small,labelfont=bf}
+\setlist[itemize]{itemsep=2pt,topsep=3pt}
+\setlist[enumerate]{itemsep=2pt,topsep=3pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Workshop 2 --- Volcanic Activity Monitoring}
+\rhead{\small Team 6}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\lstdefinestyle{evidence}{
+  basicstyle=\scriptsize\ttfamily, breaklines=true, columns=flexible,
+  frame=single, framesep=4pt, rulecolor=\color{gray!50}, backgroundcolor=\color{gray!5}
+}
+\lstset{style=evidence}
+
+% screenshot that may not exist yet
+\newcommand{\shot}[3]{%
+  \begin{figure}[htbp]\centering
+  \IfFileExists{figures/#1}{\includegraphics[width=#2\linewidth]{#1}}%
+    {\fbox{\parbox[c][4cm][c]{0.8\linewidth}{\centering\small Screenshot pending: \texttt{figures/\detokenize{#1}}}}}
+  \caption{#3}\label{fig:#1}
+  \end{figure}}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\large Universidad Distrital Francisco José de Caldas\\ School of Engineering --- Computer Engineering\par}
+\vspace{1.2cm}
+{\Large Data Analysis Programming 2026-II\par}
+\vspace{1.5cm}
+{\huge\bfseries Workshop No.~2\\[4pt] Technical Architecture and Bronze/Silver Pipeline\par}
+\vspace{0.8cm}
+{\Large Volcanic Activity Monitoring System (United States)\par}
+\vspace{1.5cm}
+{\large Team 6\par}
+\vspace{0.4cm}
+\begin{tabular}{ll}
+20231020006 & Juan Sebastián Rangel Pinto\\
+20231020055 & Jhonatan David Vergara Jiménez\\
+20231020064 & Julián Pulido\\
+\end{tabular}
+\vfill
+{\large Professor: Eng. Carlos Andrés Sierra, M.Sc.\par}
+\vspace{0.3cm}
+{\large November 2026\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Executive summary}
+
+In Workshop~1 we chose a United States scope for volcanic activity monitoring and validated our sources with real samples: Smithsonian GVP volcanoes and eruptions, the USGS earthquake feed, and the USGS Hazard Notification System (HANS) alert levels. This workshop turns that design into a running pipeline that follows the Medallion pattern:
+
+\begin{itemize}
+  \item \textbf{Stack.} Docker Compose runs Apache Airflow~2.10 (webserver on \texttt{localhost:8080}, scheduler, triggerer) with a PostgreSQL~16 metadata database. The project folders are mounted as volumes, so DAG edits are picked up live and every output stays on the host.
+  \item \textbf{Bronze.} The \texttt{bronze\_ingestion} DAG (TaskFlow API, hourly) calls three APIs (HANS, the USGS feed, and GVP once a month). It also \emph{scrapes} the USGS Volcano Updates web page with BeautifulSoup. Each source goes through extract, validate and persist. The payload is stored as \texttt{<source>\_YYYYMMDD\_HHMMSS.json}, and nothing is written when the content did not change.
+  \item \textbf{Silver.} The \texttt{silver\_processing} DAG starts with a \texttt{FileSensor} on \texttt{datalake\_bronze/}. It cleans, types, validates and deduplicates the new files with pandas, and writes one Parquet file per topic (\texttt{<topic>\_YYYYMMDD\_HHMMSS.parquet}). Rejected records go to a quarantine Parquet, and every row points back to its Bronze file.
+  \item \textbf{Results.} The first runs turned 5 Bronze files into 165 volcanoes, 1,281 US eruptions, 54 alert notices, 229 earthquakes within 30~km of a US volcano and 9 scraped notices. 144 records went to quarantine. Running both DAGs again produced no duplicate rows. 62 unit tests run on recorded fixtures.
+\end{itemize}
+
+Every preprocessing rule is grounded in a data issue observed in the Workshop~1 samples or in these first runs (Section~\ref{sec:prep}).
+
+\section{Architecture}
+
+\begin{figure}[htbp]\centering
+\IfFileExists{architecture_w2.png}{\includegraphics[width=\linewidth]{architecture_w2.png}}%
+  {\fbox{\parbox[c][4cm][c]{0.8\linewidth}{\centering\small Render \texttt{workshop\_2/architecture.mmd} to \texttt{workshop\_2/figures/architecture\_w2.png}}}}
+\caption{Pipeline architecture. Solid arrows run today; dotted arrows are the Gold layer (Workshop~3) and the dashboard (Workshop~4).}
+\label{fig:arch}
+\end{figure}
+
+\begin{longtable}{L{2.6cm}L{2.6cm}L{3.6cm}L{5.6cm}}
+\toprule
+\textbf{Component} & \textbf{Technology} & \textbf{Input / output} & \textbf{Purpose and interactions}\\
+\midrule
+\endhead
+Data sources & REST APIs, WFS, HTML page & --- / HTTP responses & HANS (JSON), USGS feed (GeoJSON), GVP WFS (GeoJSON), USGS Volcano Updates (HTML). No API keys; polite User-Agent from \texttt{.env}.\\
+Source clients & Python, \texttt{requests}, BeautifulSoup + lxml & HTTP / bytes + parsed payload & \texttt{src/volcano\_pipeline/sources/}: timeouts, 4 retries with exponential backoff on 429/5xx, \texttt{Retry-After}. Reused from Workshop~1, plus the new scraper.\\
+Airflow scheduler & Airflow 2.10, LocalExecutor & DAG files / task runs & Triggers both DAGs on schedule and runs their tasks as local subprocesses.\\
+Airflow webserver & Airflow 2.10 & metadata DB / UI on 8080 & Monitoring, manual triggers, logs.\\
+Airflow triggerer & Airflow 2.10 & --- & Required service for deferrable operators; kept so the stack matches the standard Airflow layout.\\
+Metadata DB & PostgreSQL 16 & Airflow state & DAG runs, task instances, XComs, connections. Not used for project data in this workshop.\\
+Bronze layer & JSON files & source payload / \texttt{datalake\_bronze/} & Immutable, one file per source and run, self-describing envelope (source, time, URL, SHA-256, payload).\\
+Silver layer & pandas + PyArrow, Parquet & Bronze JSON / \texttt{datalake\_silver/} & Typed, validated, deduplicated tables per topic, with lineage columns; quarantine in \texttt{datalake\_silver/quarantine/}.\\
+Gold layer (planned) & PySpark (local mode) & Silver folder / \texttt{datalake\_gold/} & Workshop~3: governance KPIs and analytical summaries.\\
+Dashboard (planned) & Plotly Dash & Gold & Workshop~4: Volcano Activity Indicator for the functional user.\\
+\bottomrule
+\end{longtable}
+
+\subsection{Technology choices}
+
+\begin{itemize}
+  \item \textbf{Airflow with the TaskFlow API} gives scheduling, retries, logs and a UI without extra code; \texttt{@dag}/\texttt{@task} keep the DAG files short. Business logic lives in \texttt{src/volcano\_pipeline}, so it is unit-tested without Airflow.
+  \item \textbf{LocalExecutor instead of Celery.} The workshop text mentions a worker. On one laptop a Celery worker also needs Redis, and it adds memory pressure: Docker Desktop has 3.7~GB here. LocalExecutor runs tasks as scheduler subprocesses with the same DAG code, and moving to CeleryExecutor later only changes the compose file.
+  \item \textbf{pandas over Polars} for Silver: batches are small (the largest Bronze file is the 11~MB GVP eruptions layer), the team already used pandas in Workshop~1, and the PyArrow backend gives the Parquet schema control we need.
+  \item \textbf{Parquet for Silver:} columnar, compressed (the 11.6~MB GVP eruptions JSON becomes a 130~KB Parquet with the 1,281 US eruptions), typed (time zones, categories, nullable integers survive a round trip), and readable as a folder by PySpark in Workshop~3.
+  \item \textbf{JSON envelope for Bronze:} the workshop asks for JSON. The envelope keeps provenance (URL, time, HTTP status, SHA-256 of the original bytes) inside the file, so a Bronze file can be re-processed on its own.
+\end{itemize}
+
+\subsection{File nomenclature}
+
+\begin{tabular}{ll}
+\toprule
+Bronze & \texttt{datalake\_bronze/<source\_id>\_YYYYMMDD\_HHMMSS.json} (UTC retrieval time)\\
+Silver & \texttt{datalake\_silver/<topic>\_YYYYMMDD\_HHMMSS.parquet} (UTC processing time)\\
+Quarantine & \texttt{datalake\_silver/quarantine/rejected\_YYYYMMDD\_HHMMSS.parquet}\\
+Silver state & \texttt{datalake\_silver/\_state/manifest.json}, \texttt{seen\_<topic>.parquet}\\
+\bottomrule
+\end{tabular}
+
+\section{Data sources in the pipeline}
+
+\begin{longtable}{L{3.2cm}L{2.3cm}L{2.0cm}L{6.8cm}}
+\toprule
+\textbf{Source id} & \textbf{Access} & \textbf{Schedule} & \textbf{Notes}\\
+\midrule
+\endhead
+\texttt{usgs\_hans} & API, JSON & hourly & \texttt{volcano/getMonitoredVolcanoes}: latest notice for 69 monitored volcanoes.\\
+\texttt{usgs\_feed} & API, GeoJSON & hourly & \texttt{all\_week.geojson} (1,800+ events worldwide). A 7-day window, so hourly polling loses nothing.\\
+\texttt{gvp\_volcanoes} & WFS, GeoJSON & monthly & 165 US Holocene volcanoes (\texttt{CQL\_FILTER=Country='United States'}); GVP v5.4.0.\\
+\texttt{gvp\_eruptions} & WFS, GeoJSON & monthly & Full layer (11,089 eruptions); US subset selected by volcano number in Silver.\\
+\texttt{usgs\_volcano\_updates} & \textbf{web scraping}, HTML & hourly & \url{https://www.usgs.gov/programs/VHP/volcano-updates}: server-rendered page with one block per elevated volcano and the latest notice of each observatory (AVO, CalVO, CVO, HVO, NMI, YVO). \texttt{robots.txt} allows \texttt{/programs/}.\\
+\bottomrule
+\end{longtable}
+
+\section{Preprocessing pipeline (Bronze to Silver)}\label{sec:prep}
+
+The complete rule set, with the observation behind each rule, is in \texttt{workshop\_2/preprocessing.md}. Summary:
+
+\subsection{Schema enforcement and data types}
+Each topic has an explicit Arrow schema (\texttt{silver/schemas.py}). Writes add missing columns as nulls, drop unknown columns and cast types, so all files of a topic share one schema. Times are UTC timestamps. The sources use three encodings: epoch milliseconds in the feed, epoch seconds in HANS, and partial dates in GVP. Low-cardinality text such as alert level, colour code, magType and network becomes \texttt{category}; volcano numbers, years and VEI are nullable integers.
+
+Two type issues appeared only with real data. First, eruption dates before 1677 overflow nanosecond timestamps (the first run failed on an eruption in 1510), so \texttt{start\_time} uses microseconds. Second, the scraped notices give local times such as \emph{10:48 AM AKST}, which are converted with an explicit table of US time zones.
+
+\subsection{Null handling}
+\begin{longtable}{L{3.5cm}L{4.2cm}L{6.6cm}}
+\toprule
+\textbf{Field} & \textbf{Observed} & \textbf{Strategy}\\
+\midrule
+\endhead
+Eruption VEI & null in 480 of 1,281 (37\%) & keep NULL + \texttt{vei\_missing}; never imputed (a guessed explosivity would bias the indicator)\\
+Eruption month/day & 0 or null & first day of the period + \texttt{time\_precision}\\
+BCE eruptions & 387 & no timestamp, year kept in \texttt{start\_year}\\
+\texttt{Last\_Eruption\_Year} & null (``Unknown'' in older exports) & NULL\\
+Feed magnitude & nullable per USGS docs & keep row + \texttt{mag\_missing}\\
+Feed geometry & required for the volcano join & quarantine \texttt{missing\_coordinates}\\
+HANS \texttt{vnum} null & 2 region-wide notices & quarantine \texttt{region\_level\_notice}\\
+HANS without notice & 13 volcanoes & quarantine \texttt{no\_notice\_issued}\\
+HANS volcano not in GVP list & e.g. Yellowstone & keep + \texttt{coords\_missing}\\
+\bottomrule
+\end{longtable}
+
+\subsection{Validation, outliers and deduplication}
+Ranges: latitude $[-90,90]$, longitude normalised to $[-180,180)$, depth $[-5,800]$~km (negative depths are valid at volcanoes), magnitude $[-2,10]$. Non-earthquake events (129 quarry blasts, explosions and ice quakes this week) are quarantined. Only earthquakes within 30~km of a US volcano with $M\ge1.0$ are kept; the 1,453 others are counted, not stored.
+
+Outliers in magnitude and depth are flagged with the IQR rule ($1.5\times$IQR) and the modified z-score ($|0.6745(x-\tilde{x})/\mathrm{MAD}|>3.5$)~\cite{iglewicz}, and \emph{never removed}: swarms and shallow events are the signal at volcanoes. First run: 3 and 2 magnitude flags, 31 and 62 depth flags.
+
+Deduplication works at three levels. Inside a batch, the last version of each \texttt{record\_id} wins. Across runs, a seen-index keeps the latest content hash per record. Bronze files already processed are listed in a manifest. Without the seen-index, each feed event would be stored up to 168 times, because the feed returns the same 7 days every hour. The same mechanism keeps the quarantine from growing with repeated rejects.
+
+\subsection{Text preprocessing}
+The scraped notices are free text, so they go through the NLP step:
+\begin{enumerate}
+  \item Strip HTML: the real text contains \texttt{<p>}, \texttt{<strong>}, \texttt{<sub>} and \texttt{\&nbsp;}.
+  \item Unicode NFKC normalisation, which keeps names such as Kīlauea and Pāhala.
+  \item Lowercase and remove URLs and punctuation.
+  \item Tokenise and remove English stop words from a fixed list.
+  \item Set keyword flags by word stem (eruption, ash, lava, seismicity, deformation, gas, plume).
+\end{enumerate}
+The most frequent tokens were \emph{volcanic, activity, episode, eruption, fountaining, november, summit, lava}. Words such as \emph{november} justify a domain stop-word list in Workshop~3.
+
+\section{Docker stack}
+
+\begin{tabular}{lll}
+\toprule
+\textbf{Service} & \textbf{Image} & \textbf{Role}\\
+\midrule
+\texttt{postgres} & postgres:16 & Airflow metadata (named volume \texttt{airflow-metadata})\\
+\texttt{airflow-init} & volcano-airflow:2.10.5 & migrates the DB, creates the UI user, exits\\
+\texttt{airflow-webserver} & volcano-airflow:2.10.5 & UI on port 8080\\
+\texttt{airflow-scheduler} & volcano-airflow:2.10.5 & schedules and executes tasks (LocalExecutor)\\
+\texttt{airflow-triggerer} & volcano-airflow:2.10.5 & deferrable operators\\
+\bottomrule
+\end{tabular}
+
+\medskip
+The custom image extends \texttt{apache/airflow:2.10.5-python3.11} with \texttt{airflow/requirements.txt} (requests, PyYAML, python-dateutil, beautifulsoup4, lxml, pandas, pyarrow), installed with the official constraints file. The bind mounts are \texttt{airflow/dags}, \texttt{airflow/logs}, \texttt{airflow/plugins}, \texttt{src} (on \texttt{PYTHONPATH}), \texttt{config}, \texttt{datalake\_bronze}, \texttt{datalake\_silver} and \texttt{datalake\_gold}. All services share the default Compose network, and only port 8080 is published. The \texttt{FileSensor} connection \texttt{fs\_default} is defined through the environment variable \texttt{AIRFLOW\_CONN\_FS\_DEFAULT}.
+
+\begin{lstlisting}
+cp .env.example .env            # set HTTP_USER_AGENT with a team contact
+docker compose up -d --build    # first build takes a few minutes
+# open http://localhost:8080  (user airflow / password airflow by default)
+# unpause bronze_ingestion and silver_processing in the UI
+\end{lstlisting}
+
+\section{DAG documentation}
+
+\subsection{\texttt{bronze\_ingestion}}
+\begin{itemize}
+  \item \textbf{Schedule:} \texttt{@hourly}, no catch-up, one active run; 3 retries with exponential backoff.
+  \item \textbf{Tasks:} \texttt{extract\_api} (mapped over HANS and the feed), \texttt{extract\_gvp} (mapped over the two GVP layers; does nothing if this month's file already exists), \texttt{scrape\_volcano\_updates}; then \texttt{validate\_*} and \texttt{persist\_*} for each group.
+  \item \textbf{Validation:} expected structure per source; for the scraper, at least one volcano block must be found, so a page redesign fails the task instead of writing an empty file.
+  \item \textbf{Output:} one JSON file per source with changed content. Large payloads travel between tasks as a temporary file in \texttt{datalake\_bronze/\_tmp/}, not through XCom. Files are written to a \texttt{.part} name and renamed, so the sensor never sees a half-written file.
+\end{itemize}
+
+\subsection{\texttt{silver\_processing}}
+\begin{itemize}
+  \item \textbf{Schedule:} \texttt{15 * * * *} (15 minutes after Bronze), no catch-up, one active run.
+  \item \textbf{Trigger:} \texttt{NewBronzeFileSensor}, a \texttt{FileSensor} on \texttt{datalake\_bronze/*.json} that only succeeds when a file is missing from the Silver manifest. A plain FileSensor would succeed on files processed long ago.
+  \item \textbf{Sensor settings:} \texttt{poke\_interval}~=~60~s, i.e.\ how often the folder is checked. \texttt{timeout}~=~40~min is how long to wait before giving up, which keeps the sensor shorter than the hourly cycle so two runs never overlap. With \texttt{mode=reschedule} the worker slot is free between pokes. With \texttt{soft\_fail=True}, a run with nothing new ends as skipped, not failed.
+  \item \textbf{Task \texttt{process}:} applies Section~\ref{sec:prep} and writes the Parquet files, the quarantine and the state. The state is updated only after all files are written, so a failed run is repeated in full next time.
+\end{itemize}
+
+\section{Results evidence}
+
+\shot{airflow_dags.png}{0.95}{Airflow UI: both DAGs active.}
+\shot{bronze_grid.png}{0.95}{\texttt{bronze\_ingestion}: successful runs in the grid view.}
+\shot{silver_grid.png}{0.95}{\texttt{silver\_processing}: sensor and processing task.}
+
+\subsection{First runs (2026-11-16)}
+\begin{tabular}{lrl}
+\toprule
+\textbf{Bronze file} & \textbf{Records} & \textbf{Size}\\
+\midrule
+\texttt{gvp\_volcanoes\_20261116\_223828.json} & 165 & 376 KB\\
+\texttt{gvp\_eruptions\_20261116\_223856.json} & 11,089 & 11.6 MB\\
+\texttt{usgs\_hans\_20261116\_223832.json} & 69 & 40 KB\\
+\texttt{usgs\_feed\_20261116\_223830.json} & 1,813 & 1.8 MB\\
+\texttt{usgs\_volcano\_updates\_20261116\_223834.json} & 9 & 18 KB\\
+\bottomrule
+\end{tabular}
+
+\medskip
+A second run right after the first wrote only a new feed file: GVP was \emph{not due}, and HANS and the scraped page were \emph{unchanged}. Silver then wrote no new rows, because the new feed file had no new or revised earthquakes near a volcano. Samples of Bronze, Silver and quarantine files are in \texttt{workshop\_2/samples/}, and \texttt{notebooks/02\_silver\_exploration.ipynb} reads them with pandas.
+
+\begin{lstlisting}
+>>> pd.read_parquet("datalake_silver/earthquakes_20261116_224153.parquet")[cols].head(3)
+         record_id                    event_time   mag mag_type  depth_km  nearest_vnum  distance_km  is_outlier_depth_z                     bronze_file
+0  usgs:nc75464572 2026-11-09 22:45:37.890+00:00  1.05       md      0.16        323100        19.17               False  usgs_feed_20261116_223954.json
+1  usgs:nc75464587 2026-11-09 23:55:18.600+00:00  1.02       md      4.01        323100        26.88               False  usgs_feed_20261116_223954.json
+2  usgs:hv75068917 2026-11-10 01:49:48.400+00:00  2.58       ml     28.73        332010        26.96                True  usgs_feed_20261116_223954.json
+\end{lstlisting}
+
+\section{Challenges and decisions}
+
+\begin{itemize}
+  \item \textbf{Choosing a scraping target.} The Smithsonian Weekly Report HTML answers HTTP~403 with a bot challenge, so we did not use it. The USGS Volcano Updates page is server-rendered, allowed by \texttt{robots.txt}, US-only, and contains the full notice text.
+  \item \textbf{Different notice formats per observatory.} HVO daily updates have no notice number, CVO prints an empty \texttt{VNUM \#}, and AVO uses local time. The parser treats every field as optional, and the record id falls back to the issue time.
+  \item \textbf{Global feed versus US scope.} 1,811 events per week, of which 229 fall within 30~km of a US volcano. We apply the Workshop~1 rule (radius and minimum magnitude in \texttt{config/sources.yaml}) and count the rest.
+  \item \textbf{Timestamps before 1677} (GVP eruptions) overflow pandas' default nanosecond precision; solved with microsecond timestamps.
+  \item \textbf{Repeated quarantine.} The first reruns quarantined the same 129 non-tectonic events every hour. Quarantine is now deduplicated like the data.
+  \item \textbf{Windows host.} The container creates a symlink in \texttt{airflow/logs} that Windows cannot read, which broke test collection; pytest is limited to \texttt{tests/}.
+\end{itemize}
+
+\begin{thebibliography}{9}
+\bibitem{airflow} Apache Software Foundation. \emph{Apache Airflow 2.10 documentation}: TaskFlow API, FileSensor, Docker Compose. \url{https://airflow.apache.org/docs/apache-airflow/2.10.5/}
+\bibitem{gvp} Global Volcanism Program (2026). \emph{Volcanoes of the World} (v.~5.4.0; 7 Aug 2026). Smithsonian Institution. \url{https://doi.org/10.5479/si.GVP.VOTW5-2026.5.4}
+\bibitem{usgsfeed} U.S. Geological Survey, Earthquake Hazards Program. \emph{Real-time GeoJSON summary feeds}. \url{https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php}
+\bibitem{hans} U.S. Geological Survey, Volcano Hazards Program. \emph{Hazard Notification System (HANS) public API}. \url{https://volcanoes.usgs.gov/hans-public/api}
+\bibitem{vhp} U.S. Geological Survey, Volcano Hazards Program. \emph{Volcano Updates}. \url{https://www.usgs.gov/programs/VHP/volcano-updates}
+\bibitem{iglewicz} Iglewicz, B. and Hoaglin, D. (1993). \emph{How to Detect and Handle Outliers}. ASQC Quality Press.
+\bibitem{pandas} The pandas development team. \emph{pandas}. \url{https://pandas.pydata.org}; Apache Arrow, \emph{PyArrow / Parquet}. \url{https://arrow.apache.org/docs/python/}
+\bibitem{bs4} Richardson, L. \emph{Beautiful Soup 4 documentation}. \url{https://www.crummy.com/software/BeautifulSoup/bs4/doc/}
+\end{thebibliography}
+
+\end{document}

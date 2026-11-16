@@ -1,0 +1,35 @@
+flowchart LR
+    subgraph SRC[Data sources]
+      direction TB
+      H[USGS HANS API<br/>alert level + colour code<br/>JSON, hourly]
+      F[USGS earthquake feed<br/>all_week GeoJSON, hourly]
+      G[Smithsonian GVP WFS<br/>US volcanoes + eruptions<br/>GeoJSON, monthly]
+      W[USGS Volcano Updates page<br/>HTML, web scraping, hourly]
+    end
+
+    subgraph DOCKER[Docker Compose - local]
+      direction LR
+      subgraph AF[Apache Airflow 2.10 - LocalExecutor]
+        direction TB
+        WS[Webserver<br/>localhost:8080]
+        SC[Scheduler<br/>runs the tasks]
+        TR[Triggerer]
+        MD[(PostgreSQL 16<br/>Airflow metadata)]
+      end
+      BD[[bronze_ingestion DAG<br/>@hourly<br/>extract - validate - persist]]
+      SD[[silver_processing DAG<br/>15 * * * *<br/>FileSensor - process]]
+      BZ[(datalake_bronze/<br/>source_YYYYMMDD_HHMMSS.json)]
+      SV[(datalake_silver/<br/>topic_YYYYMMDD_HHMMSS.parquet)]
+      QZ[(datalake_silver/quarantine/<br/>rejected_YYYYMMDD_HHMMSS.parquet)]
+      GD[(datalake_gold/<br/>planned - Workshop 3, PySpark)]
+      DB[Plotly Dash dashboard<br/>planned - Workshop 4]
+    end
+
+    H & F & G --> BD
+    W -- BeautifulSoup --> BD
+    SC --> BD & SD
+    BD --> BZ
+    BZ -. new file detected .-> SD
+    SD --> SV
+    SD --> QZ
+    SV -. planned .-> GD -. planned .-> DB
