@@ -62,6 +62,15 @@ def test_overlap_between_feed_files(tmp_path):
     assert len(df) == 1 and df["review_status"].astype(str).item() == "reviewed"
 
 
+def test_overlapping_feed_does_not_requarantine(tmp_path):
+    bronze, silver = bronze_copy(tmp_path), tmp_path / "silver"
+    process_bronze_files(bronze, silver, when=T1)
+    feed_copy(bronze, "usgs_feed_20261116_020000.json")             # same quarry blast, same missing geometry
+    out = process_bronze_files(bronze, silver, when=T2)
+    assert out["rejected"] == 0
+    assert len(list((silver / "quarantine").glob("rejected_*.parquet"))) == 1
+
+
 def test_corrupt_bronze_quarantined(tmp_path):
     bronze, silver = bronze_copy(tmp_path), tmp_path / "silver"
     (bronze / "usgs_hans_20261116_020000.json").write_text('{"broken', encoding="utf-8")

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from ..normalization.canonical import content_hash
 from .io import write_quarantine, write_topic
 from .state import filter_unseen, load_manifest, mark_processed, update_seen
 from .transform import TRANSFORMS, build_context
@@ -52,6 +53,18 @@ def _context(bronze_dir: Path, radius_km: float, min_magnitude: float | None) ->
         except ValueError:
             continue
     return build_context(None, radius_km, min_magnitude)
+
+
+def _new_rejects(rejects: list[dict], sdir: Path) -> tuple[list[dict], pd.DataFrame]:
+    """The feed is a rolling 7-day window, so the same bad record comes back every hour.
+    Quarantine each (source, reason, record) only once."""
+    if not rejects:
+        return [], pd.DataFrame(columns=["record_id", "content_hash"])
+    keys = [f"{r.get('source_id')}:{r['reason']}:{content_hash(r.get('payload'))}" for r in rejects]
+    df = pd.DataFrame({"record_id": keys, "content_hash": keys, "pos": range(len(keys))})
+    fresh = filter_unseen(df, sdir, "quarantine")
+    keep = set(fresh["pos"])
+    return [r for i, r in enumerate(rejects) if i in keep], fresh[["record_id", "content_hash"]]
 
 
 def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] | None = None,
@@ -94,10 +107,12 @@ def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] |
         if path is not None:
             written[topic] = path.name
             fresh_by_topic[topic] = fresh
+    rejects, rejects_seen = _new_rejects(rejects, sdir)
     write_quarantine(rejects, silver_dir, when)
 
     for topic, fresh in fresh_by_topic.items():
         update_seen(fresh, sdir, topic)
+    update_seen(rejects_seen, sdir, "quarantine")
     mark_processed(sdir, [p.name for p in files])
 
     summary = {"processed": [p.name for p in files], "written": written,
