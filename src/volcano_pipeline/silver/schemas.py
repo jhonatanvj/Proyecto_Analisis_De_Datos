@@ -66,6 +66,8 @@ QUARANTINE_SCHEMA = pa.schema([
 
 
 def _to_us_utc(value) -> np.datetime64:
+    if value is None or value is pd.NaT or (isinstance(value, float) and np.isnan(value)):
+        return np.datetime64("NaT", "us")
     if isinstance(value, str):
         value = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if isinstance(value, datetime):     # also covers pd.Timestamp
