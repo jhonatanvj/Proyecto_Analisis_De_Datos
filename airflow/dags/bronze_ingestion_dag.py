@@ -5,7 +5,8 @@ Sources (config/sources.yaml):
   * API, monthly: Smithsonian GVP volcanoes and eruptions (static catalogue)
   * Web scraping: USGS Volcano Updates page
 
-Each source goes extract -> validate -> persist. The extract task writes a temporary envelope to
+Each source runs extract -> validate -> persist inside its own task group, mapped per source, so
+an outage of one source does not stop the others. The extract task writes a temporary envelope to
 datalake_bronze/_tmp/ (the GVP eruptions layer is ~12 MB, too big for XCom) and only its path
 travels between tasks. persist writes <source_id>_YYYYMMDD_HHMMSS.json, or nothing when the
 content did not change since the last file of that source.
@@ -18,10 +19,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pendulum
-from airflow.decorators import dag, task
+from airflow.decorators import dag, task, task_group
+from airflow.exceptions import AirflowFailException
 
 from volcano_pipeline.bronze.envelope import build_envelope, write_bronze
-from volcano_pipeline.bronze.extract import API_SOURCES, GVP_SOURCES, SCRAPE_SOURCE, extract, gvp_due
+from volcano_pipeline.bronze.extract import (API_SOURCES, GVP_SOURCES, SCRAPE_SOURCE, extract, gvp_due,
+                                             mark_checked)
 from volcano_pipeline.bronze.validate import validate_payload
 from volcano_pipeline.config import datalake_dir, load_config, user_agent
 from volcano_pipeline.sources.http import make_session
@@ -60,6 +63,16 @@ def _extract_to_tmp(source_id: str) -> dict:
 def bronze_ingestion():
 
     @task
+    def clean_tmp() -> int:
+        # leftovers of a run that failed between extract and persist (max_active_runs=1)
+        tmp_dir = datalake_dir("bronze") / "_tmp"
+        stale = list(tmp_dir.glob("*.json")) if tmp_dir.exists() else []
+        for f in stale:
+            f.unlink(missing_ok=True)
+        _log("tmp_cleaned", files=len(stale))
+        return len(stale)
+
+    @task
     def extract_api(source_id: str) -> dict:
         return _extract_to_tmp(source_id)
 
@@ -84,7 +97,8 @@ def bronze_ingestion():
         if errors:
             tmp.unlink(missing_ok=True)
             _log("validation_failed", source_id=ref["source_id"], errors=errors)
-            raise ValueError(f"{ref['source_id']}: {errors}")
+            # retrying cannot fix a payload that has the wrong shape: fail without retries
+            raise AirflowFailException(f"{ref['source_id']}: {errors}")
         _log("validated", source_id=ref["source_id"], records=envelope["record_count"])
         return ref
 
@@ -96,20 +110,28 @@ def bronze_ingestion():
         envelope = json.loads(tmp.read_text(encoding="utf-8"))
         path = write_bronze(envelope, datalake_dir("bronze"))
         tmp.unlink(missing_ok=True)
+        if ref["source_id"] in GVP_SOURCES:
+            mark_checked(datalake_dir("bronze"), ref["source_id"], datetime.now(timezone.utc))
         status = "written" if path else "unchanged"
         _log(status, source_id=ref["source_id"], file=path.name if path else None)
         return {"source_id": ref["source_id"], "status": status, "file": path.name if path else None}
 
-    api = extract_api.expand(source_id=list(API_SOURCES))
-    persist.override(task_id="persist_api").expand(
-        ref=validate.override(task_id="validate_api").expand(ref=api))
+    @task_group
+    def api_source(source_id: str):
+        persist(validate(extract_api(source_id)))
 
-    gvp = extract_gvp.expand(source_id=list(GVP_SOURCES))
-    persist.override(task_id="persist_gvp").expand(
-        ref=validate.override(task_id="validate_gvp").expand(ref=gvp))
+    @task_group
+    def gvp_source(source_id: str):
+        persist(validate(extract_gvp(source_id)))
 
-    scraped = scrape_volcano_updates()
-    persist.override(task_id="persist_scrape")(validate.override(task_id="validate_scrape")(scraped))
+    @task_group
+    def scrape_source():
+        persist(validate(scrape_volcano_updates()))
+
+    cleanup = clean_tmp()
+    cleanup >> [api_source.expand(source_id=list(API_SOURCES)),
+                gvp_source.expand(source_id=list(GVP_SOURCES)),
+                scrape_source()]
 
 
 bronze_ingestion()

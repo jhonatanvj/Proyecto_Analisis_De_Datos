@@ -97,3 +97,32 @@ def test_lineage_columns(tmp_path):
     assert df["bronze_sha256"].str.len().eq(64).all()
     assert (df["processed_utc"] == pd.Timestamp(T1)).all()
     assert out["written"]["earthquakes"] == "earthquakes_20261116_031500.parquet"
+
+
+def test_crash_after_writing_does_not_duplicate_rows(tmp_path, monkeypatch):
+    import volcano_pipeline.silver.run as run
+    bronze, silver = bronze_copy(tmp_path), tmp_path / "silver"
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("disk full")
+    monkeypatch.setattr(run, "update_seen", boom)
+    try:
+        process_bronze_files(bronze, silver, when=T1)
+    except RuntimeError:
+        pass
+    monkeypatch.undo()
+    process_bronze_files(bronze, silver, when=T2)
+    files = list(silver.glob("earthquakes_*.parquet"))
+    assert len(files) == 1 and files[0].name == "earthquakes_20261116_041500.parquet"
+
+
+def test_transform_error_quarantines_file_and_continues(tmp_path):
+    bronze, silver = bronze_copy(tmp_path), tmp_path / "silver"
+    (bronze / "usgs_feed_20261116_020000.json").write_text(
+        '{"source_id": "usgs_feed", "payload": [1, 2]}', encoding="utf-8")
+    out = process_bronze_files(bronze, silver, when=T1)
+    assert "usgs_feed_20261116_020000.json" in out["processed"]
+    q = pd.read_parquet(next((silver / "quarantine").glob("rejected_*.parquet")))
+    bad = q[q["bronze_file"] == "usgs_feed_20261116_020000.json"]
+    assert bad["reason"].tolist() == ["transform_error"] and "AttributeError" in bad["payload"].item()
+    assert "earthquakes" in out["written"]

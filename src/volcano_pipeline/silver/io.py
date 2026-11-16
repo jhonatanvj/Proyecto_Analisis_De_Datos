@@ -18,7 +18,8 @@ def _name(prefix: str, when: datetime) -> str:
 def _write(table, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".parquet.part")
-    pq.write_table(table, tmp)
+    # microseconds: Spark 3 cannot read Parquet TIMESTAMP(NANOS) and Workshop 3 reads this folder with PySpark
+    pq.write_table(table, tmp, coerce_timestamps="us", allow_truncated_timestamps=True)
     tmp.replace(path)
     return path
 

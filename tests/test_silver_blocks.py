@@ -91,3 +91,16 @@ def test_write_topic_and_quarantine(tmp_path):
     assert q.parent.name == "quarantine" and q.name == "rejected_20261116_031500.parquet"
     assert pd.read_parquet(q)["payload"].iloc[0] == '{"id": "x"}'
     assert write_quarantine([], tmp_path, WHEN) is None
+
+
+def test_parquet_timestamps_are_microseconds(tmp_path):
+    # Spark 3 cannot read Parquet TIMESTAMP(NANOS); Workshop 3 reads this folder with PySpark
+    import pyarrow.parquet as pq
+    df = enforce(pd.DataFrame({"record_id": ["usgs:x"], "content_hash": ["h"],
+                               "event_time": ["2026-11-16T01:00:00Z"], "processed_utc": [WHEN]}), "earthquakes")
+    p = write_topic(df, tmp_path, "earthquakes", WHEN)
+    schema = pq.ParquetFile(p).schema.to_arrow_schema()
+    units = {f.name: f.type.unit for f in schema if str(f.type).startswith("timestamp")}
+    assert units and set(units.values()) == {"us"}
+    q = write_quarantine([{"source_id": "s", "reason": "r", "payload": {}}], tmp_path, WHEN)
+    assert pq.ParquetFile(q).schema.to_arrow_schema().field("processed_utc").type.unit == "us"

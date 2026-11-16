@@ -168,7 +168,7 @@ The complete rule set, with the observation behind each rule, is in \texttt{work
 \subsection{Schema enforcement and data types}
 Each topic has an explicit Arrow schema (\texttt{silver/schemas.py}). Writes add missing columns as nulls, drop unknown columns and cast types, so all files of a topic share one schema. Times are UTC timestamps. The sources use three encodings: epoch milliseconds in the feed, epoch seconds in HANS, and partial dates in GVP. Low-cardinality text such as alert level, colour code, magType and network becomes \texttt{category}; volcano numbers, years and VEI are nullable integers.
 
-Two type issues appeared only with real data. First, eruption dates before 1677 overflow nanosecond timestamps (the first run failed on an eruption in 1510), so \texttt{start\_time} uses microseconds. Second, the scraped notices give local times such as \emph{10:48 AM AKST}, which are converted with an explicit table of US time zones.
+Two type issues appeared only with real data. First, eruption dates before 1677 overflow nanosecond timestamps (the first run failed on an eruption in 1510), so \texttt{start\_time} uses microseconds. All Parquet timestamps are written with microsecond precision anyway: Spark~3, which reads this folder in Workshop~3, rejects nanosecond Parquet timestamps (found in the final code review). Second, the scraped notices give local times such as \emph{10:48 AM AKST}, which are converted with an explicit table of US time zones.
 
 \subsection{Null handling}
 \begin{longtable}{L{3.5cm}L{4.2cm}L{6.6cm}}
@@ -235,8 +235,9 @@ docker compose up -d --build    # first build takes a few minutes
 \subsection{\texttt{bronze\_ingestion}}
 \begin{itemize}
   \item \textbf{Schedule:} \texttt{@hourly}, no catch-up, one active run; 3 retries with exponential backoff.
-  \item \textbf{Tasks:} \texttt{extract\_api} (mapped over HANS and the feed), \texttt{extract\_gvp} (mapped over the two GVP layers; does nothing if this month's file already exists), \texttt{scrape\_volcano\_updates}; then \texttt{validate\_*} and \texttt{persist\_*} for each group.
-  \item \textbf{Validation:} expected structure per source; for the scraper, at least one volcano block must be found, so a page redesign fails the task instead of writing an empty file.
+  \item \textbf{Tasks:} \texttt{clean\_tmp} first, then three task groups, each running \texttt{extract} $\rightarrow$ \texttt{validate} $\rightarrow$ \texttt{persist}:
+  \texttt{api\_source} (mapped over HANS and the feed), \texttt{gvp\_source} (mapped over the two GVP layers; does nothing if the layer was already checked this month) and \texttt{scrape\_source} (web scraping). The groups are mapped per source, so a failed source does not block the others.
+  \item \textbf{Validation:} expected structure per source; for the scraper, at least one volcano block must be found, so a page redesign fails the task (\texttt{AirflowFailException}, no retries) instead of writing an empty file.
   \item \textbf{Output:} one JSON file per source with changed content. Large payloads travel between tasks as a temporary file in \texttt{datalake\_bronze/\_tmp/}, not through XCom. Files are written to a \texttt{.part} name and renamed, so the sensor never sees a half-written file.
 \end{itemize}
 
@@ -271,11 +272,11 @@ docker compose up -d --build    # first build takes a few minutes
 A second run right after the first wrote only a new feed file: GVP was \emph{not due}, and HANS and the scraped page were \emph{unchanged}. Silver then wrote no new rows, because the new feed file had no new or revised earthquakes near a volcano. Samples of Bronze, Silver and quarantine files are in \texttt{workshop\_2/samples/}, and \texttt{notebooks/02\_silver\_exploration.ipynb} reads them with pandas.
 
 \begin{lstlisting}
->>> pd.read_parquet("datalake_silver/earthquakes_20261116_224153.parquet")[cols].head(3)
+>>> pd.read_parquet("datalake_silver/earthquakes_20261116_225940.parquet")[cols].head(3)
          record_id                    event_time   mag mag_type  depth_km  nearest_vnum  distance_km  is_outlier_depth_z                     bronze_file
-0  usgs:nc75464572 2026-11-09 22:45:37.890+00:00  1.05       md      0.16        323100        19.17               False  usgs_feed_20261116_223954.json
-1  usgs:nc75464587 2026-11-09 23:55:18.600+00:00  1.02       md      4.01        323100        26.88               False  usgs_feed_20261116_223954.json
-2  usgs:hv75068917 2026-11-10 01:49:48.400+00:00  2.58       ml     28.73        332010        26.96                True  usgs_feed_20261116_223954.json
+0  usgs:nc75464572 2026-11-09 22:45:37.890+00:00  1.05       md      0.16        323100        19.17               False  usgs_feed_20261116_224227.json
+1  usgs:nc75464587 2026-11-09 23:55:18.600+00:00  1.02       md      4.01        323100        26.88               False  usgs_feed_20261116_225716.json
+2  usgs:hv75068917 2026-11-10 01:49:48.400+00:00  2.58       ml     28.73        332010        26.96                True  usgs_feed_20261116_225716.json
 \end{lstlisting}
 
 \section{Challenges and decisions}
@@ -286,6 +287,7 @@ A second run right after the first wrote only a new feed file: GVP was \emph{not
   \item \textbf{Global feed versus US scope.} 1,811 events per week, of which 229 fall within 30~km of a US volcano. We apply the Workshop~1 rule (radius and minimum magnitude in \texttt{config/sources.yaml}) and count the rest.
   \item \textbf{Timestamps before 1677} (GVP eruptions) overflow pandas' default nanosecond precision; solved with microsecond timestamps.
   \item \textbf{Repeated quarantine.} The first reruns quarantined the same 129 non-tectonic events every hour. Quarantine is now deduplicated like the data.
+  \item \textbf{Failure behaviour (final code review).} A crash between writing the Parquet files and saving the Silver state could duplicate rows on retry; a journal of pending outputs now rolls them back. A Bronze file whose payload breaks a transform is quarantined (\texttt{transform\_error}) instead of blocking every later run. In Bronze, each source runs in its own mapped task group, so an outage of one API does not stop the others, and validation errors fail at once without retries.
   \item \textbf{Windows host.} The container creates a symlink in \texttt{airflow/logs} that Windows cannot read, which broke test collection; pytest is limited to \texttt{tests/}.
 \end{itemize}
 

@@ -64,3 +64,14 @@ def test_gvp_due_once_per_month(tmp_path):
     assert not gvp_due(tmp_path, "gvp_volcanoes", nov)
     assert gvp_due(tmp_path, "gvp_volcanoes", dec)
     assert gvp_due(tmp_path, "gvp_eruptions", nov)
+
+
+def test_gvp_not_due_after_unchanged_check(tmp_path):
+    # an unchanged catalogue writes no Bronze file, but it was still checked this month
+    from volcano_pipeline.bronze.extract import mark_checked
+    nov = datetime(2026, 11, 20, tzinfo=timezone.utc)
+    mark_checked(tmp_path, "gvp_eruptions", nov)
+    assert not gvp_due(tmp_path, "gvp_eruptions", nov)
+    assert gvp_due(tmp_path, "gvp_eruptions", datetime(2026, 12, 1, tzinfo=timezone.utc))
+    assert gvp_due(tmp_path, "gvp_volcanoes", nov)
+    assert not list(tmp_path.glob("*.json"))      # the marker is not a Bronze file

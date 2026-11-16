@@ -3,7 +3,9 @@
 One call writes at most one Parquet file per topic, named with the processing time, plus one
 quarantine file. Every row carries the Bronze file it came from. The manifest and the
 seen-index are updated only after all files of the call were written, so a crash in the middle
-leaves the Bronze files unprocessed and the next run repeats them.
+leaves the Bronze files unprocessed and the next run repeats them. A journal
+(_state/pending.json) lists the files a call is about to write; if the call dies before the state
+is saved, the next call deletes those files first, so the repeat cannot duplicate rows.
 """
 from __future__ import annotations
 
@@ -55,6 +57,30 @@ def _context(bronze_dir: Path, radius_km: float, min_magnitude: float | None) ->
     return build_context(None, radius_km, min_magnitude)
 
 
+def _output_paths(silver_dir: Path, topics: list[str], when: datetime) -> list[Path]:
+    stamp = f"{when:%Y%m%d_%H%M%S}"
+    return ([silver_dir / f"{t}_{stamp}.parquet" for t in topics]
+            + [silver_dir / "quarantine" / f"rejected_{stamp}.parquet"])
+
+
+def _write_journal(silver_dir: Path, topics: list[str], when: datetime) -> None:
+    sdir = state_dir(silver_dir)
+    sdir.mkdir(parents=True, exist_ok=True)
+    names = [p.relative_to(silver_dir).as_posix() for p in _output_paths(silver_dir, topics, when)]
+    (sdir / "pending.json").write_text(json.dumps(names), encoding="utf-8")
+
+
+def _rollback_pending(silver_dir: Path) -> None:
+    """Delete the outputs of a call that died before saving its state."""
+    journal = state_dir(silver_dir) / "pending.json"
+    if not journal.exists():
+        return
+    for name in json.loads(journal.read_text(encoding="utf-8")):
+        (silver_dir / name).unlink(missing_ok=True)
+        log.warning("removed orphan Silver file %s from an interrupted run", name)
+    journal.unlink()
+
+
 def _new_rejects(rejects: list[dict], sdir: Path) -> tuple[list[dict], pd.DataFrame]:
     """The feed is a rolling 7-day window, so the same bad record comes back every hour.
     Quarantine each (source, reason, record) only once."""
@@ -77,8 +103,14 @@ def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] |
     rejects: list[dict] = []
     out_of_scope = 0
 
+    _rollback_pending(silver_dir)
     for path in files:
-        raw = path.read_bytes()
+        try:
+            raw = path.read_bytes()
+        except OSError as exc:
+            rejects.append({"source_id": None, "reason": "unreadable_bronze",
+                            "payload": repr(exc), "bronze_file": path.name})
+            continue
         lineage = {"bronze_file": path.name, "bronze_sha256": hashlib.sha256(raw).hexdigest(),
                    "processed_utc": pd.Timestamp(when)}
         try:
@@ -93,7 +125,13 @@ def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] |
             rejects.append({"source_id": source_id, "reason": "unknown_source",
                             "payload": {"source_id": source_id}, "bronze_file": path.name})
             continue
-        topic, df, bad = transform(envelope, ctx)
+        try:
+            topic, df, bad = transform(envelope, ctx)
+        except Exception as exc:   # one bad file must not block every later run
+            log.exception("transform failed for %s", path.name)
+            rejects.append({"source_id": source_id, "reason": "transform_error",
+                            "payload": f"{type(exc).__name__}: {exc}", "bronze_file": path.name})
+            continue
         out_of_scope += df.attrs.get("out_of_scope", 0)
         rejects += [{**r, "bronze_file": path.name} for r in bad]
         if not df.empty:
@@ -101,6 +139,7 @@ def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] |
 
     sdir = state_dir(silver_dir)
     written, fresh_by_topic = {}, {}
+    _write_journal(silver_dir, list(frames), when)
     for topic, parts in frames.items():
         fresh = filter_unseen(pd.concat(parts, ignore_index=True), sdir, topic)
         path = write_topic(fresh, silver_dir, topic, when)
@@ -114,6 +153,7 @@ def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] |
         update_seen(fresh, sdir, topic)
     update_seen(rejects_seen, sdir, "quarantine")
     mark_processed(sdir, [p.name for p in files])
+    (sdir / "pending.json").unlink(missing_ok=True)
 
     summary = {"processed": [p.name for p in files], "written": written,
                "rows": {t: len(f) for t, f in fresh_by_topic.items()},

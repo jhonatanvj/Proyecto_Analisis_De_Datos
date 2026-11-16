@@ -18,8 +18,8 @@ The exact schema of each topic (names, Arrow types, categorical columns) is in `
 
 | Field type | Rule | Why |
 |---|---|---|
-| Event times | `timestamp[ns, UTC]`. Feed `time` and `updated` are epoch milliseconds, HANS `sent_unixtime` is epoch seconds | Workshop 1 finding: three different time encodings across sources |
-| Eruption start | `timestamp[us, UTC]` | Nanosecond timestamps stop at 1677. The first test run failed on eruption 20745 (year 1510) |
+| Event times | UTC, written to Parquet as `timestamp[us, UTC]` (Spark 3, used in Workshop 3, rejects nanosecond Parquet timestamps). Feed `time` and `updated` are epoch milliseconds, HANS `sent_unixtime` is epoch seconds | Workshop 1 finding: three different time encodings across sources |
+| Eruption start | `timestamp[us, UTC]` also in memory | pandas' default nanosecond timestamps stop at 1677. The first test run failed on eruption 20745 (year 1510) |
 | Notice times on the scraped page | Parsed with an explicit table of US time zones (AKST, HST, PST, MST, ChST...) | The page mixes local times ("10:48 AM AKST") with UTC; without the table, a parser would read AKST times as UTC (9 h error) |
 | Alert level, colour code, magType, network, review status, observatory, time precision, activity type | `category` (Arrow dictionary) | Few distinct values, repeated in every row |
 | Volcano numbers, years, VEI | Nullable `Int64` | GVP leaves VEI and years empty; plain integers cannot hold nulls |

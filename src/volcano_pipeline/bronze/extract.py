@@ -47,7 +47,22 @@ def extract(source_id: str, cfg: dict, session) -> Extraction:
     return Extraction(source_id, str(resp.url), params, resp.status_code, resp.content, payload)
 
 
+def _marker(directory: Path, source_id: str) -> Path:
+    return directory / "_state" / f"{source_id}.last_checked"
+
+
+def mark_checked(directory: Path, source_id: str, when: datetime) -> None:
+    """Remember the month a source was downloaded, also when its content was unchanged
+    (write_bronze then writes no file, so the file names alone cannot tell)."""
+    path = _marker(directory, source_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{when:%Y%m}", encoding="utf-8")
+
+
 def gvp_due(directory: Path, source_id: str, now: datetime) -> bool:
     """GVP is a static catalogue: download it once per calendar month."""
-    month = f"{source_id}_{now:%Y%m}"
-    return not any(p.name.startswith(month) for p in bronze_files(directory, source_id))
+    month = f"{now:%Y%m}"
+    marker = _marker(directory, source_id)
+    if marker.exists() and marker.read_text(encoding="utf-8").strip() == month:
+        return False
+    return not any(p.name.startswith(f"{source_id}_{month}") for p in bronze_files(directory, source_id))

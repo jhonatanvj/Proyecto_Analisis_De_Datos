@@ -85,7 +85,7 @@ DAG files stay thin: they call functions in `src/volcano_pipeline`, which are un
 | Step | Rule |
 |---|---|
 | Schema enforcement | An explicit pyarrow schema per topic; columns cast to it; missing required field → quarantine. |
-| Types | Timestamps to `datetime64[ns, UTC]` (epoch ms for the feed, epoch s for HANS, partial dates for GVP with `time_precision`); numeric fields to float; alert level, colour code, magType, network and status to `category`. |
+| Types | Timestamps to UTC, stored in Parquet as `timestamp[us, UTC]` (Spark 3 cannot read nanosecond Parquet timestamps) (epoch ms for the feed, epoch s for HANS, partial dates for GVP with `time_precision`); numeric fields to float; alert level, colour code, magType, network and status to `category`. |
 | Nulls | Feed `mag` null → keep, `mag_missing` flag. GVP VEI null → keep NULL + flag. Partial GVP dates → first day of period + precision; BCE → NULL time, keep year. `Last_Eruption_Year = 'Unknown'` → NULL. HANS `vnum` null/placeholder or `notice_identifier` null → quarantine with the Workshop 1 reasons. FDSN-style quality fields (gap, rms…) stay NULL; they are not used in rules. |
 | Validation ranges | Latitude [-90, 90], longitude normalised to [-180, 180), depth [-5, 800] km (negative depths are valid at volcanoes), magnitude [-2, 10]; non-earthquake `type` → quarantine `non_tectonic_type`. |
 | Outliers | Magnitude and depth: IQR (1.5×) and robust z-score flags per batch (`is_outlier_*`). Flagged, not removed: at volcanoes, swarms and shallow events are the signal. |
