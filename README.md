@@ -37,6 +37,7 @@ None of these sources needs an API key. Full details (URLs, limits, watermarks, 
 |---|---|---|
 | Bronze (raw JSON per source and run) | **running**: `bronze_ingestion` DAG, hourly | `datalake_bronze/<source>_YYYYMMDD_HHMMSS.json` |
 | Silver (clean Parquet per topic + quarantine) | **running**: `silver_processing` DAG, FileSensor-triggered | `datalake_silver/<topic>_YYYYMMDD_HHMMSS.parquet` |
+| Project database (PostgreSQL + PostGIS, canonical model) | **draft**: schema loads, not wired to the pipeline ([handoff](docs/database_handoff.md)) | service `project-db` (profile `db`), `sql/` |
 | Gold (governance + analytical summaries, PySpark) | planned (Workshop #3) | `datalake_gold/` |
 | Dashboard (Plotly Dash, `localhost:8050`) | planned (Workshop #4) | `dashboard/` |
 
@@ -51,27 +52,117 @@ sources (HANS, USGS feed, GVP WFS, USGS Volcano Updates page)
    -> Gold with PySpark (Workshop 3) -> Dash dashboard (Workshop 4)
 ```
 
-## Run the pipeline (Docker)
+## Getting started on your own machine
 
-Requirements: Docker Desktop with at least 4 GB of memory for Docker.
+Everything below was tested on Windows 11 with Docker Desktop. It works the same on macOS and Linux; the differences are noted.
+
+### 1. Prerequisites
+
+| Tool | Version | Used for |
+|---|---|---|
+| Git | any | clone the repository |
+| Docker Desktop (or Docker Engine + Compose v2) | Compose 2.24+ | the Airflow stack. Give Docker **at least 4 GB of RAM** (Settings → Resources) |
+| Python | 3.11 | tests, notebooks and the local runner (not needed just to run the DAGs) |
+
+### 2. Clone and configure
 
 ```bash
-cp .env.example .env              # set HTTP_USER_AGENT with a team e-mail
-docker compose up -d --build      # postgres, airflow-init, webserver, scheduler, triggerer
+git clone https://github.com/jhonatanvj/Proyecto_Analisis_De_Datos.git
+cd Proyecto_Analisis_De_Datos
+git checkout workshop-2              # until it is merged into main
+cp .env.example .env                 # Windows PowerShell: Copy-Item .env.example .env
 ```
 
-1. Open http://localhost:8080 (user `airflow`, password `airflow` unless changed in `.env`).
-2. Unpause `bronze_ingestion` and `silver_processing`. Bronze runs every hour at minute 0; Silver starts at minute 15 and waits up to 40 min for new Bronze files.
-3. To run them once by hand: trigger `bronze_ingestion`, wait for it to finish, then trigger `silver_processing`. From a terminal:
+Edit `.env`:
+* `HTTP_USER_AGENT`: put a team e-mail. USGS and GVP ask clients to identify themselves.
+* **Linux only:** set `AIRFLOW_UID` to your user id (`id -u`), otherwise Airflow cannot write to `airflow/logs/` and the `datalake_*` folders. Leave `50000` on Windows and macOS.
+* `.env` is git-ignored; never commit it.
+
+Do not clone into a OneDrive, Dropbox or iCloud folder if you can avoid it: syncing can lock files that Docker is writing.
+
+### 3. Start Airflow
+
+```bash
+docker compose up -d --build         # first build: 3-5 min (downloads the Airflow image)
+docker compose ps                    # wait until webserver and scheduler are "healthy" (1-2 min)
+```
+
+Open http://localhost:8080 and log in with user `airflow`, password `airflow`. To use other credentials, set `_AIRFLOW_WWW_USER_USERNAME` / `_AIRFLOW_WWW_USER_PASSWORD` in `.env` before the first start.
+
+### 4. Run the DAGs
+
+In the UI, switch on (unpause) **`bronze_ingestion`** and **`silver_processing`**. Bronze runs every hour at minute 0 and Silver at minute 15. To run them right away, use the ▶ (trigger) button: first Bronze, wait until it is green, then Silver. The same from a terminal:
 
 ```bash
 docker compose exec airflow-scheduler airflow dags test bronze_ingestion
 docker compose exec airflow-scheduler airflow dags test silver_processing
 ```
 
-Outputs appear on the host in `datalake_bronze/` and `datalake_silver/`. Explore them with [`notebooks/02_silver_exploration.ipynb`](notebooks/02_silver_exploration.ipynb). `docker compose down` stops the stack; add `-v` to also delete the Airflow metadata database.
+Results appear on your machine:
 
-If the repository lives in a OneDrive/Dropbox folder and Docker reports file access errors, clone it to a folder outside the synced directory.
+| Folder | Content |
+|---|---|
+| `datalake_bronze/` | `<source>_YYYYMMDD_HHMMSS.json`: raw payload of each source and run (a source whose content did not change writes no new file) |
+| `datalake_silver/` | `<topic>_YYYYMMDD_HHMMSS.parquet`: clean data per topic (`earthquakes`, `alert_notices`, `volcanoes`, `eruptions`, `volcano_updates`) |
+| `datalake_silver/quarantine/` | `rejected_YYYYMMDD_HHMMSS.parquet`: rejected records with the reason |
+| `datalake_silver/_state/` | processed-file manifest and dedup index (do not edit by hand) |
+
+The first Bronze run downloads about 14 MB; after that, the GVP catalogue is fetched only once a month. The feed and HANS responses are small.
+
+### 5. Python environment (tests, notebooks, local runner)
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate                # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+pytest -q                            # ~70 tests, no network needed
+jupyter notebook notebooks/02_silver_exploration.ipynb
+```
+
+To run the pipeline once **without Docker** (same code as the DAGs; useful to debug a source):
+
+```bash
+python scripts/run_pipeline_local.py                           # Bronze (all sources) + Silver
+python scripts/run_pipeline_local.py --only bronze --sources usgs_hans
+python scripts/run_pipeline_local.py --root ../lake_test       # write to another folder
+```
+
+By default it writes to the same `datalake_*` folders as Docker. Do not run it while the DAGs are running, or pass `--root`.
+
+### 6. Stop, restart, reset
+
+```bash
+docker compose stop                  # pause everything (keeps data and Airflow history)
+docker compose up -d                 # start again
+docker compose down                  # remove containers (data in datalake_* stays)
+docker compose down -v               # also delete the Airflow metadata DB (run history, users)
+```
+
+To reprocess Silver from the Bronze files, pause the DAGs and delete everything in `datalake_silver/` except `.gitkeep`. The next Silver run rebuilds it.
+
+### 7. Project database (draft)
+
+The PostgreSQL/PostGIS database of the course contract is **not wired to the pipeline yet**. A draft is ready to continue:
+
+```bash
+docker compose --profile db up -d project-db     # PostGIS on localhost:5432, loads sql/001_schema_draft.sql
+docker compose --profile db exec project-db psql -U volcano -d volcano -c "\dt"
+```
+
+What exists, what is missing and the suggested next steps: [`docs/database_handoff.md`](docs/database_handoff.md).
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `port is already allocated` on 8080 or 5432 | Another program uses the port. Stop it, or change the left side of `ports:` in `docker-compose.yml`. For 5432, set `POSTGRES_PORT` in `.env` |
+| Webserver keeps restarting, or the UI is very slow | Give Docker more memory (4 GB+) |
+| A DAG shows "Broken DAG" | `docker compose exec airflow-scheduler airflow dags list-import-errors` |
+| Task logs | UI → DAG → Grid → task → Logs, or the `airflow/logs/` folder |
+| `Permission denied` writing `datalake_*` (Linux) | Set `AIRFLOW_UID=$(id -u)` in `.env`, then `docker compose down && docker compose up -d` |
+| `pytest` fails on `airflow/logs/...` | Run it from the repo root, where `pytest.ini` limits collection to `tests/` |
+| Silver run is "skipped" | Normal: no new Bronze file in that hour (the sources did not change) |
+| Apple Silicon: PostGIS image warning | `postgis/postgis` has no ARM image; it runs under emulation, which is fine for development |
 
 ## Repository structure
 
@@ -84,17 +175,17 @@ If the repository lives in a OneDrive/Dropbox folder and Docker reports file acc
 │   ├── bronze/                # extraction, payload validation, JSON envelope writer
 │   ├── silver/                # schemas, cleaning per topic, text, outliers, dedup state, runner
 │   ├── normalization/         # canonical mapping, geo helpers
-│   └── storage/               # raw landing zone (Workshop #1)
+│   └── storage/               # raw landing zone (Workshop #1); database loader goes here
 ├── airflow/                   # Dockerfile, requirements, dags/ (bronze_ingestion, silver_processing)
-├── docker-compose.yml         # Airflow stack
+├── docker-compose.yml         # Airflow stack (+ optional PostGIS draft, profile db)
 ├── datalake_bronze/ datalake_silver/ datalake_gold/   # data lake layers (git-ignored)
 ├── data/raw/                  # raw landing zone (git-ignored)
-├── sql/                       # schema definitions (draft DDL)
+├── sql/                       # draft DDL, loaded by the project-db container
 ├── dashboard/                 # Dash app (Workshop #4)
 ├── tests/ and tests/fixtures/ # pytest + recorded responses
 ├── notebooks/01_source_profiling.ipynb, 02_silver_exploration.ipynb
-├── scripts/fetch_samples.py   # downloads the Workshop #1 evidence samples
-├── docs/                      # ER diagram, architecture, report sources
+├── scripts/                   # fetch_samples.py (W1), run_pipeline_local.py, collect_w2_samples.py (W2)
+├── docs/                      # ER diagram, architecture, W1 report, database_handoff.md
 ├── workshop_1/                # mapping, ingestion contract, samples, source status log
 └── workshop_2/                # design, preprocessing spec, report, architecture, samples
 ```
@@ -121,10 +212,12 @@ pytest -q
 ## CLI contract
 
 ```bash
-python ingest.py --mode historical [--start 2010-01-01 --end 2025-12-31]   # Workshop #2
-python ingest.py --mode incremental                                        # Workshop #3
+python ingest.py --mode historical [--start 2010-01-01 --end 2025-12-31]
+python ingest.py --mode incremental
 python ingest.py --mode status                                             # watermarks, last runs, row counts
 ```
+
+`ingest.py` is still a stub: it validates arguments and lists the sources. It will load the Silver data into the project database (see [`docs/database_handoff.md`](docs/database_handoff.md)).
 
 ## Workshop deliverables
 

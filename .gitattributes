@@ -3,3 +3,5 @@ workshop_1/samples/** -text
 tests/fixtures/*.json -text
 tests/fixtures/*.xml -text
 data/raw/** -text
+tests/fixtures/** -text
+workshop_2/samples/** -text

@@ -120,5 +120,28 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # Project database (DRAFT, not used by the DAGs yet). Starts only on request:
+  #   docker compose --profile db up -d project-db
+  # On first start it runs every .sql file in sql/ (the Workshop 1 draft schema).
+  # Next steps for the team: docs/database_handoff.md
+  project-db:
+    image: postgis/postgis:16-3.4
+    profiles: ["db"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-volcano}
+      POSTGRES_USER: ${POSTGRES_USER:-volcano}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - project-db-data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   airflow-metadata:
+  project-db-data:
