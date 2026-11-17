@@ -26,6 +26,24 @@ MAX_EVENTS = 20_000
 MIN_SPAN = timedelta(days=1)
 
 
+BLANK_DATES = {"", "empty", "today", "none"}
+
+
+def parse_day(value: str | None, default) -> datetime:
+    """Date parameter typed by a person in the Airflow form: blank (or 'empty', 'today') means default."""
+    from datetime import date
+
+    text = (value or "").strip()
+    if text.lower() in BLANK_DATES:
+        d = default
+    else:
+        try:
+            d = date.fromisoformat(text)
+        except ValueError:
+            raise ValueError(f"invalid date {value!r}: use YYYY-MM-DD or leave it blank") from None
+    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+
+
 def volcano_coords_from_bronze(bronze_dir: Path, only: list[int] | None = None) -> dict[int, tuple[float, float]]:
     """Positions of the US volcanoes from the newest gvp_volcanoes Bronze file (empty if there is none)."""
     from ..silver.transform import build_context

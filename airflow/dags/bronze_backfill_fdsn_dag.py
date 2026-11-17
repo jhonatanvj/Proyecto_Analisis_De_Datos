@@ -1,7 +1,7 @@
 """One-off historical load: earthquakes around every US volcano from the USGS FDSN service.
 
 Run it by hand (Trigger DAG w/ config) once. Parameters:
-  * start / end: date range, default config `historical_start` (2010-01-01) -> today
+  * start / end: date range YYYY-MM-DD; leave end blank for today
   * vnums: optional list of volcano numbers to load only those (e.g. [332010] for Kilauea)
 
 plan asks the FDSN /count endpoint how many events each volcano has and splits busy volcanoes
@@ -27,7 +27,7 @@ from airflow.exceptions import AirflowFailException
 from airflow.models.param import Param
 
 from volcano_pipeline.bronze.envelope import build_envelope
-from volcano_pipeline.bronze.fdsn_backfill import (fetch_partition, volcano_coords_from_bronze,
+from volcano_pipeline.bronze.fdsn_backfill import (fetch_partition, parse_day, volcano_coords_from_bronze,
                                                    volcano_partitions, write_bronze_unique)
 from volcano_pipeline.bronze.validate import validate_payload
 from volcano_pipeline.config import datalake_dir, load_config, user_agent
@@ -40,11 +40,6 @@ def _log(event: str, **fields) -> None:
     log.info(json.dumps({"event": event, **fields}, default=str))
 
 
-def _day(value: str | None, default: date) -> datetime:
-    d = date.fromisoformat(value) if value else default
-    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
-
-
 @dag(
     dag_id="bronze_backfill_fdsn",
     schedule=None,                      # manual only
@@ -54,7 +49,7 @@ def _day(value: str | None, default: date) -> datetime:
     default_args={"retries": 3, "retry_delay": timedelta(minutes=1), "retry_exponential_backoff": True},
     params={
         "start": Param("2010-01-01", type="string", description="YYYY-MM-DD"),
-        "end": Param("", type="string", description="YYYY-MM-DD, empty = today"),
+        "end": Param("", type="string", description="YYYY-MM-DD, leave blank for today"),
         "vnums": Param([], type="array", description="volcano numbers to load; empty = all US volcanoes"),
     },
     tags=["volcano", "bronze", "historical"],
@@ -65,8 +60,13 @@ def bronze_backfill_fdsn():
     @task
     def plan(params: dict | None = None) -> list[dict]:
         cfg = load_config()
-        start = _day(params.get("start"), date.fromisoformat(cfg["project"]["historical_start"]))
-        end = _day(params.get("end"), datetime.now(timezone.utc).date() + timedelta(days=1))
+        try:
+            start = parse_day(params.get("start"), date.fromisoformat(cfg["project"]["historical_start"]))
+            end = parse_day(params.get("end"), datetime.now(timezone.utc).date() + timedelta(days=1))
+        except ValueError as exc:   # a typo in the form will not fix itself: no retries
+            raise AirflowFailException(str(exc)) from None
+        if start >= end:
+            raise AirflowFailException(f"start {start:%Y-%m-%d} must be before end {end:%Y-%m-%d}")
         vnums = [int(v) for v in params.get("vnums") or []]
         coords = volcano_coords_from_bronze(datalake_dir("bronze"), only=vnums)
         if not coords:

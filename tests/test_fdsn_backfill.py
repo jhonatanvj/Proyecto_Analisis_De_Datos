@@ -120,3 +120,15 @@ def test_run_fdsn_backfill_writes_one_file_per_partition(tmp_path):
                             RoutingSession(3), tmp_path, START, END)
     assert out == {"partitions": 2, "events": 6, "files": 2}
     assert len(list(tmp_path.glob("usgs_fdsn_*.json"))) == 2
+
+
+def test_parse_day_accepts_blank_words_and_dates():
+    import pytest
+    from datetime import date
+    from volcano_pipeline.bronze.fdsn_backfill import parse_day
+    default = date(2026, 11, 18)
+    for value in (None, "", "  ", "empty", "today", "TODAY", "none"):
+        assert parse_day(value, default) == datetime(2026, 11, 18, tzinfo=UTC)
+    assert parse_day(" 2010-01-01 ", default) == datetime(2010, 1, 1, tzinfo=UTC)
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        parse_day("01/02/2010", default)
