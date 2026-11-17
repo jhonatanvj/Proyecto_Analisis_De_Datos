@@ -1,0 +1,138 @@
+{
+ "source_id": "gvp_volcanoes",
+ "retrieved_utc": "2026-11-16T00:00:00+00:00",
+ "url": "https://example.test/gvp_volcanoes",
+ "params": {},
+ "http_status": 200,
+ "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "record_count": 4,
+ "payload": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "id": "Smithsonian_VOTW_Holocene_Volcanoes.fid--24b39c22_1a1c35757cb_57fa",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -176.13,
+      52.076
+     ]
+    },
+    "geometry_name": "GeoLocation",
+    "properties": {
+     "Volcano_Number": 311120,
+     "Volcano_Name": "Great Sitkin",
+     "Volcanic_Landform": "Composite",
+     "Primary_Volcano_Type": "Stratovolcano",
+     "Last_Eruption_Year": 2026,
+     "Country": "United States",
+     "Region": "North America Volcanic Regions",
+     "Subregion": "Aleutian Ridge Volcanic Arc",
+     "Latitude": 52.076,
+     "Longitude": -176.13,
+     "Elevation": 1740,
+     "Tectonic_Setting": "Subduction zone / Intermediate crust (15-25 km)",
+     "Geologic_Epoch": "Holocene",
+     "Evidence_Category": "Eruption Observed",
+     "Primary_Photo_Link": "https://volcano.si.edu/gallery/photos/GVP-08562.jpg",
+     "Primary_Photo_Credit": "Photo by Fred Zeillemaker, 1982 (U.S. Fish and Wildlife Service, courtesy of Alaska Volcano Observatory).",
+     "Major_Rock_Type": "Andesite / Basaltic Andesite"
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "Smithsonian_VOTW_Holocene_Volcanoes.fid--24b39c22_1a1c35757cb_5826",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -154.9533,
+      58.279
+     ]
+    },
+    "geometry_name": "GeoLocation",
+    "properties": {
+     "Volcano_Number": 312170,
+     "Volcano_Name": "Katmai",
+     "Volcanic_Landform": "Composite",
+     "Primary_Volcano_Type": "Stratovolcano",
+     "Last_Eruption_Year": 1912,
+     "Country": "United States",
+     "Region": "North America Volcanic Regions",
+     "Subregion": "Alaska Peninsula Volcanic Arc",
+     "Latitude": 58.279,
+     "Longitude": -154.9533,
+     "Elevation": 2047,
+     "Tectonic_Setting": "Subduction zone / Continental crust (> 25 km)",
+     "Geologic_Epoch": "Holocene",
+     "Evidence_Category": "Eruption Observed",
+     "Primary_Photo_Link": "https://volcano.si.edu/gallery/photos/GVP-05308.jpg",
+     "Primary_Photo_Credit": "Photo by Chris Nye, 1991 (Alaska Division of Geological and Geophysical Surveys, Alaska Volcano Observatory).",
+     "Major_Rock_Type": "Andesite / Basaltic Andesite"
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "Smithsonian_VOTW_Holocene_Volcanoes.fid--24b39c22_1a1c35757cb_586e",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -155.287,
+      19.421
+     ]
+    },
+    "geometry_name": "GeoLocation",
+    "properties": {
+     "Volcano_Number": 332010,
+     "Volcano_Name": "Kilauea",
+     "Volcanic_Landform": "Shield",
+     "Primary_Volcano_Type": "Shield",
+     "Last_Eruption_Year": 2026,
+     "Country": "United States",
+     "Region": "Eastern Pacific Volcanic Regions",
+     "Subregion": "Hawaiian-Emperor Hotspot Volcano Group",
+     "Latitude": 19.421,
+     "Longitude": -155.287,
+     "Elevation": 1222,
+     "Tectonic_Setting": "Intraplate / Oceanic crust (< 15 km)",
+     "Geologic_Epoch": "Holocene",
+     "Evidence_Category": "Eruption Observed",
+     "Primary_Photo_Link": "https://volcano.si.edu/gallery/photos/GVP-03420.jpg",
+     "Primary_Photo_Credit": "Photo by Richard Fiske, 1968 (Smithsonian Institution).",
+     "Major_Rock_Type": "Basalt / Picro-Basalt"
+    }
+   },
+   {
+    "type": "Feature",
+    "id": "Smithsonian_VOTW_Holocene_Volcanoes.fid--24b39c22_1a1c35757cb_57d4",
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -169.454,
+      -14.23
+     ]
+    },
+    "geometry_name": "GeoLocation",
+    "properties": {
+     "Volcano_Number": 244001,
+     "Volcano_Name": "Tau",
+     "Volcanic_Landform": "Shield",
+     "Primary_Volcano_Type": "Shield",
+     "Last_Eruption_Year": null,
+     "Country": "United States",
+     "Region": "Southern Pacific Volcanic Regions",
+     "Subregion": "Samoan Hotspot Volcano Group",
+     "Latitude": -14.23,
+     "Longitude": -169.454,
+     "Elevation": 931,
+     "Tectonic_Setting": "Subduction zone / Oceanic crust (< 15 km)",
+     "Geologic_Epoch": "Holocene",
+     "Evidence_Category": "Evidence Credible",
+     "Primary_Photo_Link": "https://volcano.si.edu/gallery/photos/GVP-12008.jpg",
+     "Primary_Photo_Credit": "Photo by John Brooks, 1992 (U. S. National Park Service).",
+     "Major_Rock_Type": "Basalt / Picro-Basalt"
+    }
+   }
+  ]
+ }
+}

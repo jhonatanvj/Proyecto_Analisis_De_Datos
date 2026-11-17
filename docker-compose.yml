@@ -1,0 +1,150 @@
+# Local Airflow stack for the Bronze/Silver pipeline (Workshop 2).
+#   docker compose up -d --build      then open http://localhost:8080
+# Based on the official Airflow 2.10 compose file, reduced to LocalExecutor: tasks run as
+# subprocesses of the scheduler, so no Celery worker or Redis is needed on one machine.
+
+x-airflow-common: &airflow-common
+  build: ./airflow
+  image: volcano-airflow:2.10.5
+  env_file:
+    - path: .env
+      required: false
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_POSTGRES_PASSWORD:-airflow}@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: utc
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-change_me_local_only}
+    # connection used by the FileSensor (local filesystem)
+    AIRFLOW_CONN_FS_DEFAULT: '{"conn_type": "fs", "extra": {"path": "/"}}'
+    PYTHONPATH: /opt/airflow/src
+    DATALAKE_ROOT: /opt/airflow
+    SOURCES_CONFIG: /opt/airflow/config/sources.yaml
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./src:/opt/airflow/src
+    - ./config:/opt/airflow/config
+    - ./datalake_bronze:/opt/airflow/datalake_bronze
+    - ./datalake_silver:/opt/airflow/datalake_silver
+    - ./datalake_gold:/opt/airflow/datalake_gold
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-depends
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD:-airflow}
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-metadata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    # migrate the metadata DB, create the UI user, then exit
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/logs
+        exec /entrypoint airflow version
+    environment:
+      <<: *airflow-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    user: "0:0"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    environment:
+      <<: *airflow-env
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      <<: *airflow-depends
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Project database (PostgreSQL + PostGIS). Starts with the rest of the stack
+  # (docker compose up -d); alone: docker compose up -d project-db
+  # On first start (empty volume) it runs every .sql file in sql/ in name order:
+  # 001 = Workshop 1 draft schema, 002 = Silver quality indicators.
+  # From the host (DBeaver, psql): localhost:${POSTGRES_PORT}, db/user/password from .env.
+  # Next steps for the team: docs/database_handoff.md
+  project-db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-volcano}
+      POSTGRES_USER: ${POSTGRES_USER:-volcano}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - project-db-data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  airflow-metadata:
+  project-db-data:
+    # fixed name so the reset command in docs/database_handoff.md works in any clone folder
+    name: volcano_project_db_data

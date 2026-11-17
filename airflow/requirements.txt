@@ -1,0 +1,9 @@
+# Installed on top of apache/airflow:2.10.5-python3.11 with the official constraints file,
+# so versions are the ones Airflow was tested with.
+requests
+PyYAML
+python-dateutil
+beautifulsoup4
+lxml
+pandas
+pyarrow
