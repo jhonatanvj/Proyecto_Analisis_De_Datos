@@ -22,6 +22,7 @@ flowchart LR
       SV[(datalake_silver/<br/>topic_YYYYMMDD_HHMMSS.parquet)]
       QZ[(datalake_silver/quarantine/<br/>rejected_YYYYMMDD_HHMMSS.parquet)]
       GD[(datalake_gold/<br/>planned - Workshop 3, PySpark)]
+      PG[(PostGIS project DB<br/>project-db, localhost:5432<br/>schema + Silver indicators)]
       DB[Plotly Dash dashboard<br/>planned - Workshop 4]
     end
 
@@ -33,3 +34,4 @@ flowchart LR
     SD --> SV
     SD --> QZ
     SV -. planned .-> GD -. planned .-> DB
+    SV -. loader planned .-> PG -. planned .-> DB

@@ -120,13 +120,14 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # Project database (DRAFT, not used by the DAGs yet). Starts only on request:
-  #   docker compose --profile db up -d project-db
-  # On first start it runs every .sql file in sql/ (the Workshop 1 draft schema).
+  # Project database (PostgreSQL + PostGIS). Starts with the rest of the stack
+  # (docker compose up -d); alone: docker compose up -d project-db
+  # On first start (empty volume) it runs every .sql file in sql/ in name order:
+  # 001 = Workshop 1 draft schema, 002 = Silver quality indicators.
+  # From the host (DBeaver, psql): localhost:${POSTGRES_PORT}, db/user/password from .env.
   # Next steps for the team: docs/database_handoff.md
   project-db:
     image: postgis/postgis:16-3.4
-    profiles: ["db"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-volcano}
       POSTGRES_USER: ${POSTGRES_USER:-volcano}
@@ -145,3 +146,5 @@ services:
 volumes:
   airflow-metadata:
   project-db-data:
+    # fixed name so the reset command in docs/database_handoff.md works in any clone folder
+    name: volcano_project_db_data

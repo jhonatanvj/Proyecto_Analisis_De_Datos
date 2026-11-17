@@ -38,7 +38,7 @@ None of these sources needs an API key. Full details (URLs, limits, watermarks, 
 | Bronze (raw JSON per source and run) | **running**: `bronze_ingestion` DAG, hourly | `datalake_bronze/<source>_YYYYMMDD_HHMMSS.json` |
 | Historical earthquakes (FDSN, 2010 → today) | **ready**: `bronze_backfill_fdsn` DAG, run by hand once | `datalake_bronze/usgs_fdsn_*.json` → Silver `earthquakes_*` |
 | Silver (clean Parquet per topic + quarantine) | **running**: `silver_processing` DAG, FileSensor-triggered | `datalake_silver/<topic>_YYYYMMDD_HHMMSS.parquet` |
-| Project database (PostgreSQL + PostGIS, canonical model) | **draft**: schema loads, not wired to the pipeline ([handoff](docs/database_handoff.md)) | service `project-db` (profile `db`), `sql/` |
+| Project database (PostgreSQL + PostGIS, canonical model) | **schema ready** (with Silver quality indicators), starts with the stack; loader not written yet ([handoff](docs/database_handoff.md)) | service `project-db`, `sql/` |
 | Gold (governance + analytical summaries, PySpark) | planned (Workshop #3) | `datalake_gold/` |
 | Dashboard (Plotly Dash, `localhost:8050`) | planned (Workshop #4) | `dashboard/` |
 
@@ -122,7 +122,7 @@ The first Bronze run downloads about 14 MB; after that, the GVP catalogue is fet
 python -m venv .venv
 .venv\Scripts\activate                # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-pytest -q                            # ~70 tests, no network needed
+pytest -q                            # ~80 tests, no network needed
 jupyter notebook notebooks/02_silver_exploration.ipynb
 ```
 
@@ -148,16 +148,16 @@ docker compose down -v               # also delete the Airflow metadata DB (run 
 
 To reprocess Silver from the Bronze files, pause the DAGs and delete everything in `datalake_silver/` except `.gitkeep`. The next Silver run rebuilds it.
 
-### 7. Project database (draft)
+### 7. Project database (PostgreSQL + PostGIS)
 
-The PostgreSQL/PostGIS database of the course contract is **not wired to the pipeline yet**. A draft is ready to continue:
+`docker compose up -d` also starts the `project-db` service. On its first start it creates the schema from `sql/` (`001_schema_draft.sql`, then `002_silver_indicators.sql` with the Silver quality flags, lineage columns, the `volcano_update` table and the `silver_quality_indicators` view). The tables stay empty until the Silver → database loader is written.
 
 ```bash
-docker compose --profile db up -d project-db     # PostGIS on localhost:5432, loads sql/001_schema_draft.sql
-docker compose --profile db exec project-db psql -U volcano -d volcano -c "\dt"
+docker compose up -d project-db                                   # only the database
+docker compose exec project-db psql -U volcano -d volcano -c "\dt"
 ```
 
-What exists, what is missing and the suggested next steps: [`docs/database_handoff.md`](docs/database_handoff.md).
+Connect from DBeaver or any SQL client: host `localhost`, port `POSTGRES_PORT` (5432), database `volcano`, user `volcano`, password `POSTGRES_PASSWORD` from `.env`. Step by step, how to apply schema changes and next steps: [`docs/database_handoff.md`](docs/database_handoff.md).
 
 ### Troubleshooting
 
@@ -185,10 +185,10 @@ What exists, what is missing and the suggested next steps: [`docs/database_hando
 │   ├── normalization/         # canonical mapping, geo helpers
 │   └── storage/               # raw landing zone (Workshop #1); database loader goes here
 ├── airflow/                   # Dockerfile, requirements, dags/ (bronze_ingestion, silver_processing, bronze_backfill_fdsn)
-├── docker-compose.yml         # Airflow stack (+ optional PostGIS draft, profile db)
+├── docker-compose.yml         # Airflow stack + PostGIS project database
 ├── datalake_bronze/ datalake_silver/ datalake_gold/   # data lake layers (git-ignored)
 ├── data/raw/                  # raw landing zone (git-ignored)
-├── sql/                       # draft DDL, loaded by the project-db container
+├── sql/                       # DDL (001 draft + 002 Silver indicators), loaded by the project-db container
 ├── dashboard/                 # Dash app (Workshop #4)
 ├── tests/ and tests/fixtures/ # pytest + recorded responses
 ├── notebooks/01_source_profiling.ipynb, 02_silver_exploration.ipynb

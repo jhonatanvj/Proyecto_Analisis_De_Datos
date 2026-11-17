@@ -218,11 +218,12 @@ The most frequent tokens were \emph{volcanic, activity, episode, eruption, fount
 \texttt{airflow-webserver} & volcano-airflow:2.10.5 & UI on port 8080\\
 \texttt{airflow-scheduler} & volcano-airflow:2.10.5 & schedules and executes tasks (LocalExecutor)\\
 \texttt{airflow-triggerer} & volcano-airflow:2.10.5 & deferrable operators\\
+\texttt{project-db} & postgis/postgis:16-3.4 & project database (schema + Silver indicators; loader in Workshop 3)\\
 \bottomrule
 \end{tabular}
 
 \medskip
-The custom image extends \texttt{apache/airflow:2.10.5-python3.11} with \texttt{airflow/requirements.txt} (requests, PyYAML, python-dateutil, beautifulsoup4, lxml, pandas, pyarrow), installed with the official constraints file. The bind mounts are \texttt{airflow/dags}, \texttt{airflow/logs}, \texttt{airflow/plugins}, \texttt{src} (on \texttt{PYTHONPATH}), \texttt{config}, \texttt{datalake\_bronze}, \texttt{datalake\_silver} and \texttt{datalake\_gold}. All services share the default Compose network, and only port 8080 is published. The \texttt{FileSensor} connection \texttt{fs\_default} is defined through the environment variable \texttt{AIRFLOW\_CONN\_FS\_DEFAULT}.
+The custom image extends \texttt{apache/airflow:2.10.5-python3.11} with \texttt{airflow/requirements.txt} (requests, PyYAML, python-dateutil, beautifulsoup4, lxml, pandas, pyarrow), installed with the official constraints file. The bind mounts are \texttt{airflow/dags}, \texttt{airflow/logs}, \texttt{airflow/plugins}, \texttt{src} (on \texttt{PYTHONPATH}), \texttt{config}, \texttt{datalake\_bronze}, \texttt{datalake\_silver} and \texttt{datalake\_gold}. All services share the default Compose network. Two ports are published: 8080 (Airflow UI) and 5432 (\texttt{project-db}, for SQL clients such as DBeaver; named volume \texttt{volcano\_project\_db\_data}, schema from \texttt{sql/} on first start). The \texttt{FileSensor} connection \texttt{fs\_default} is defined through the environment variable \texttt{AIRFLOW\_CONN\_FS\_DEFAULT}.
 
 \begin{lstlisting}
 cp .env.example .env            # set HTTP_USER_AGENT with a team contact
