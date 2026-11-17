@@ -74,7 +74,7 @@
 \begin{tabular}{ll}
 20231020006 & Juan Sebastián Rangel Pinto\\
 20231020055 & Jhonatan David Vergara Jiménez\\
-20231020064 & Julián Pulido\\
+20231020064 & Julián David Pulido Carreño\\
 \end{tabular}
 \vfill
 {\large Professor: Eng. Carlos Andrés Sierra, M.Sc.\par}
@@ -97,6 +97,9 @@ In Workshop~1 we chose a United States scope for volcanic activity monitoring an
 \end{itemize}
 
 Every preprocessing rule is grounded in a data issue observed in the Workshop~1 samples or in these first runs (Section~\ref{sec:prep}).
+
+\vspace{10pt}
+Link to repository: \url{https://github.com/jhonatanvj/Proyecto_Analisis_De_Datos}
 
 \section{Architecture}
 
@@ -218,7 +221,6 @@ The most frequent tokens were \emph{volcanic, activity, episode, eruption, fount
 \texttt{airflow-webserver} & volcano-airflow:2.10.5 & UI on port 8080\\
 \texttt{airflow-scheduler} & volcano-airflow:2.10.5 & schedules and executes tasks (LocalExecutor)\\
 \texttt{airflow-triggerer} & volcano-airflow:2.10.5 & deferrable operators\\
-\texttt{project-db} & postgis/postgis:16-3.4 & project database (schema + Silver indicators; loader in Workshop 3)\\
 \bottomrule
 \end{tabular}
 
@@ -280,7 +282,37 @@ docker compose up -d --build    # first build takes a few minutes
 \medskip
 A second run right after the first wrote only a new feed file: GVP was \emph{not due}, and HANS and the scraped page were \emph{unchanged}. Silver then wrote no new rows, because the new feed file had no new or revised earthquakes near a volcano. Samples of Bronze, Silver and quarantine files are in \texttt{workshop\_2/samples/}, and \texttt{notebooks/02\_silver\_exploration.ipynb} reads them with pandas.
 
-\begin{lstlisting}
+\begin{lstlisting}[caption={Sample Bronze JSON envelope (\texttt{usgs\_hans\_20261116\_223832.json}, trimmed).}]
+{
+  "source_id": "usgs_hans",
+  "retrieved_utc": "2026-11-16T22:38:32.184235+00:00",
+  "url": "https://volcanoes.usgs.gov/hans-public/api/volcano/getMonitoredVolcanoes",
+  "params": {},
+  "http_status": 200,
+  "content_sha256": "132621765f266d8b5fee85970214d3d67490ae9ecadf0274c85880addc2da1a5",
+  "record_count": 69,
+  "payload": [
+    {
+      "volcano_name": "Akutan",
+      "vnum": "311320",
+      "sent_utc": "2019-09-06 18:29:39",
+      "sent_unixtime": 1567794579,
+      "alert_level": "NORMAL",
+      "color_code": "GREEN",
+      "volcano_cd": "ak6",
+      "obs_fullname": "Alaska Volcano Observatory",
+      "obs_abbr": "avo",
+      "notice_type_cd": "IS",
+      "notice_identifier": "DOI-USGS-AVO-2019-09-04T15:47:55-08:00",
+      "notice_url": "https://volcanoes.usgs.gov/hans-public/notice/DOI-USGS-AVO-2019-09-04T15:47:55-08:00",
+      "notice_data": "https://volcanoes.usgs.gov/hans-public/api/notice/getNotice/DOI-USGS-AVO-2019-09-04T15:47:55-08:00"
+    }
+    // ... 68 more records
+  ]
+}
+\end{lstlisting}
+
+\begin{lstlisting}[basicstyle=\tiny\ttfamily, caption={Sample Silver Parquet output (\texttt{earthquakes\_20261116\_225940.parquet}) read with pandas, showing normalized UTC timestamps, spatial join to the nearest volcano, outlier flags, and Bronze file lineage.}]
 >>> pd.read_parquet("datalake_silver/earthquakes_20261116_225940.parquet")[cols].head(3)
          record_id                    event_time   mag mag_type  depth_km  nearest_vnum  distance_km  is_outlier_depth_z                     bronze_file
 0  usgs:nc75464572 2026-11-09 22:45:37.890+00:00  1.05       md      0.16        323100        19.17               False  usgs_feed_20261116_224227.json
