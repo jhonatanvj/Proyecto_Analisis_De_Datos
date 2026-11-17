@@ -48,9 +48,11 @@ def _log(event: str, **fields) -> None:
     max_active_runs=1,
     default_args={"retries": 3, "retry_delay": timedelta(minutes=1), "retry_exponential_backoff": True},
     params={
-        "start": Param("2010-01-01", type="string", description="YYYY-MM-DD"),
-        "end": Param("", type="string", description="YYYY-MM-DD, leave blank for today"),
-        "vnums": Param([], type="array", description="volcano numbers to load; empty = all US volcanoes"),
+        # the trigger form sends an emptied field as null, so every field also accepts null
+        "start": Param("2010-01-01", type=["null", "string"], description="YYYY-MM-DD"),
+        "end": Param(None, type=["null", "string"], description="YYYY-MM-DD, leave blank for today"),
+        "vnums": Param(None, type=["null", "array"],
+                       description="GVP volcano numbers, one per line (e.g. 332010 = Kilauea); blank = all US volcanoes"),
     },
     tags=["volcano", "bronze", "historical"],
     doc_md=__doc__,
