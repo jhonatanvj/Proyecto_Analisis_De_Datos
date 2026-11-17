@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from typing import Callable
 
+import numpy as np
 import pandas as pd
 from dateutil import parser as dateparser
 
 from ..normalization.canonical import content_hash, gvp_eruption_date
-from ..normalization.geo import haversine_km, normalize_longitude
+from ..normalization.geo import EARTH_RADIUS_KM, normalize_longitude
 from ..sources.usgs_hans import ALERT_LEVELS, reject_reason
 from .schemas import enforce
 from .quality import iqr_outliers, robust_z_outliers
@@ -56,13 +57,28 @@ def _reject(source_id: str, reason: str, payload) -> dict:
     return {"source_id": source_id, "reason": reason, "payload": payload}
 
 
-def _nearest_volcano(lat: float, lon: float, coords: dict) -> tuple[int | None, float | None]:
-    best, best_d = None, None
-    for vnum, (vlat, vlon) in coords.items():
-        d = haversine_km(lat, lon, vlat, vlon)
-        if best_d is None or d < best_d:
-            best, best_d = vnum, d
-    return best, best_d
+def nearest_volcanoes(lats, lons, coords: dict[int, tuple[float, float]],
+                      chunk: int = 20_000) -> tuple[np.ndarray, np.ndarray]:
+    """Nearest volcano and its great-circle distance (km) for every point, vectorised.
+
+    The FDSN backfill brings ~365k events and there are 165 volcanoes, so a Python loop over
+    every pair would take minutes; numpy does it in a fraction of a second per chunk.
+    """
+    vnums = np.array(list(coords.keys()))
+    vlat = np.radians([c[0] for c in coords.values()])[None, :]
+    vlon = np.radians([c[1] for c in coords.values()])[None, :]
+    lat = np.radians(np.asarray(lats, dtype=float))
+    lon = np.radians(np.asarray(lons, dtype=float))
+    best_v = np.empty(len(lat), dtype=vnums.dtype)
+    best_d = np.empty(len(lat), dtype=float)
+    for i in range(0, len(lat), chunk):
+        la, lo = lat[i:i + chunk, None], lon[i:i + chunk, None]
+        a = np.sin((vlat - la) / 2) ** 2 + np.cos(la) * np.cos(vlat) * np.sin((vlon - lo) / 2) ** 2
+        d = 2 * EARTH_RADIUS_KM * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+        idx = d.argmin(axis=1)
+        best_v[i:i + chunk] = vnums[idx]
+        best_d[i:i + chunk] = d[np.arange(len(idx)), idx]
+    return best_v, best_d
 
 
 def earthquakes_from_feed(envelope: dict, ctx: dict) -> tuple[str, pd.DataFrame, list[dict]]:
@@ -93,10 +109,6 @@ def earthquakes_from_feed(envelope: dict, ctx: dict) -> tuple[str, pd.DataFrame,
         if mag is not None and not (MAG_RANGE[0] <= mag <= MAG_RANGE[1]):
             rejects.append(_reject(src, "magnitude_out_of_range", feat))
             continue
-        vnum, dist = _nearest_volcano(lat, lon, coords) if coords else (None, None)
-        if coords and (dist is None or dist > radius or (mag is not None and min_mag is not None and mag < min_mag)):
-            out_of_scope += 1       # counted, not stored (Workshop 1 contract)
-            continue
         rows.append({
             "record_id": f"usgs:{feat['id']}", "content_hash": content_hash(feat),
             "event_time": pd.to_datetime(p.get("time"), unit="ms", utc=True),
@@ -104,10 +116,17 @@ def earthquakes_from_feed(envelope: dict, ctx: dict) -> tuple[str, pd.DataFrame,
             "latitude": lat, "longitude": lon, "depth_km": depth, "mag": mag,
             "mag_type": (p.get("magType") or "").lower() or None, "network": p.get("net"),
             "review_status": p.get("status"), "place": p.get("place"),
-            "nearest_vnum": vnum, "distance_km": round(dist, 2) if dist is not None else None,
             "mag_missing": mag is None,
         })
     df = pd.DataFrame(rows)
+    if not df.empty and coords:
+        vnums, dists = nearest_volcanoes(df["latitude"], df["longitude"], coords)
+        df["nearest_vnum"], df["distance_km"] = vnums, np.round(dists, 2)
+        keep = (df["distance_km"] <= radius)
+        if min_mag is not None:
+            keep &= df["mag"].isna() | (df["mag"] >= min_mag)
+        out_of_scope = int((~keep).sum())       # counted, not stored (Workshop 1 contract)
+        df = df[keep]
     if not df.empty:
         df = df.sort_values("updated_time").drop_duplicates("record_id", keep="last")
         for col, name in (("mag", "mag"), ("depth_km", "depth")):
@@ -214,6 +233,7 @@ def volcano_updates_from_scrape(envelope: dict, ctx: dict) -> tuple[str, pd.Data
 
 TRANSFORMS: dict[str, Transform] = {
     "usgs_feed": earthquakes_from_feed,
+    "usgs_fdsn": earthquakes_from_feed,      # historical backfill: same GeoJSON format and ids
     "usgs_hans": alert_notices_from_hans,
     "gvp_volcanoes": volcanoes_from_gvp,
     "gvp_eruptions": eruptions_from_gvp,

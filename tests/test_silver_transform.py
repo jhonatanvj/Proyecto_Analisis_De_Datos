@@ -89,3 +89,22 @@ def test_parse_us_time_zones():
     assert parse_us_time("Monday, November 16, 2026, 10:48 AM AKST") == pd.Timestamp("2026-11-16 19:48", tz="UTC")
     assert parse_us_time("2026-11-16 17:26:55 UTC") == pd.Timestamp("2026-11-16 17:26:55", tz="UTC")
     assert parse_us_time(None) is None and parse_us_time("not a date") is None
+
+
+def test_fdsn_backfill_uses_the_earthquake_transform():
+    env = load_env("usgs_feed_20261116_010000.json")
+    env["source_id"] = "usgs_fdsn"
+    topic, df, _ = TRANSFORMS["usgs_fdsn"](env, CTX)
+    assert topic == "earthquakes" and len(df) == 6 and set(df["nearest_vnum"]) == {332010}
+
+
+def test_nearest_volcano_is_vectorized_and_correct():
+    from volcano_pipeline.normalization.geo import haversine_km
+    from volcano_pipeline.silver.transform import nearest_volcanoes
+    coords = {1: (19.421, -155.287), 2: (52.076, -176.13), 3: (58.27, -154.96)}
+    lats, lons = [19.5, 52.0, 0.0], [-155.3, -176.0, 0.0]
+    vnums, dists = nearest_volcanoes(lats, lons, coords)
+    assert list(vnums) == [1, 2, 3]
+    for lat, lon, v, d in zip(lats, lons, vnums, dists):
+        expected = min(coords, key=lambda k: haversine_km(lat, lon, *coords[k]))
+        assert v == expected and abs(d - haversine_km(lat, lon, *coords[v])) < 1e-6

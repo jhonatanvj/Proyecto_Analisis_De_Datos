@@ -22,7 +22,7 @@ Volcanic activity: unrest and eruptions of the volcanoes of the **United States*
 | ID | Source | Role | Format | Licence / attribution |
 |---|---|---|---|---|
 | `gvp_volcanoes`, `gvp_eruptions` | Smithsonian GVP *Volcanoes of the World* (WFS) | historical | GeoJSON | Cite the database version and DOI (v5.4.0, 7 Aug 2026, doi:10.5479/si.GVP.VOTW5-2026.5.4) |
-| `usgs_fdsn` | USGS FDSN Event Web Service (ComCat) | historical | CSV | Public domain, credit USGS |
+| `usgs_fdsn` | USGS FDSN Event Web Service (ComCat) | historical (one-off backfill DAG) | GeoJSON (CSV in Workshop 1) | Public domain, credit USGS |
 | `usgs_hans` | USGS HANS public API (alert level + aviation colour code) | incremental (hourly) | JSON | Public domain, credit USGS Volcano Hazards Program |
 | `usgs_feed` | USGS real-time GeoJSON feed `all_week` | incremental (minutes) | GeoJSON | Public domain, credit USGS |
 | `usgs_volcano_updates` | USGS Volcano Updates page (**web scraping**, BeautifulSoup) | incremental (hourly) | HTML → JSON records | Public domain, credit USGS Volcano Hazards Program |
@@ -36,6 +36,7 @@ None of these sources needs an API key. Full details (URLs, limits, watermarks, 
 | Layer | Status | Where |
 |---|---|---|
 | Bronze (raw JSON per source and run) | **running**: `bronze_ingestion` DAG, hourly | `datalake_bronze/<source>_YYYYMMDD_HHMMSS.json` |
+| Historical earthquakes (FDSN, 2010 → today) | **ready**: `bronze_backfill_fdsn` DAG, run by hand once | `datalake_bronze/usgs_fdsn_*.json` → Silver `earthquakes_*` |
 | Silver (clean Parquet per topic + quarantine) | **running**: `silver_processing` DAG, FileSensor-triggered | `datalake_silver/<topic>_YYYYMMDD_HHMMSS.parquet` |
 | Project database (PostgreSQL + PostGIS, canonical model) | **draft**: schema loads, not wired to the pipeline ([handoff](docs/database_handoff.md)) | service `project-db` (profile `db`), `sql/` |
 | Gold (governance + analytical summaries, PySpark) | planned (Workshop #3) | `datalake_gold/` |
@@ -109,6 +110,12 @@ Results appear on your machine:
 
 The first Bronze run downloads about 14 MB; after that, the GVP catalogue is fetched only once a month. The feed and HANS responses are small.
 
+**Historical earthquakes (once).** The hourly DAGs only bring the last 7 days of earthquakes. To load the history since 2010, run **`bronze_backfill_fdsn`** by hand: in the UI, click ▶ → *Trigger DAG w/ config*. Leave the defaults (all US volcanoes, 2010-01-01 → today) or set `vnums` (e.g. `[332010]` for Kilauea) and `start`/`end`. Run `bronze_ingestion` at least once first, because the backfill needs the volcano positions.
+* For each volcano it asks USGS how many events there are. Busy volcanoes such as Kilauea are split into date ranges under the 20,000-events-per-request limit.
+* Each range is downloaded as `usgs_fdsn_*.json`, at most 4 requests at the same time.
+* The next `silver_processing` run turns the files into `earthquakes_*.parquet`.
+* The full load is about 365,000 events and 350 MB of Bronze JSON, and takes tens of minutes. Try one volcano first.
+
 ### 5. Python environment (tests, notebooks, local runner)
 
 ```bash
@@ -125,6 +132,7 @@ To run the pipeline once **without Docker** (same code as the DAGs; useful to de
 python scripts/run_pipeline_local.py                           # Bronze (all sources) + Silver
 python scripts/run_pipeline_local.py --only bronze --sources usgs_hans
 python scripts/run_pipeline_local.py --root ../lake_test       # write to another folder
+python scripts/run_pipeline_local.py --fdsn-backfill --vnums 332010 --start 2024-01-01   # FDSN history, then Silver
 ```
 
 By default it writes to the same `datalake_*` folders as Docker. Do not run it while the DAGs are running, or pass `--root`.
@@ -176,7 +184,7 @@ What exists, what is missing and the suggested next steps: [`docs/database_hando
 │   ├── silver/                # schemas, cleaning per topic, text, outliers, dedup state, runner
 │   ├── normalization/         # canonical mapping, geo helpers
 │   └── storage/               # raw landing zone (Workshop #1); database loader goes here
-├── airflow/                   # Dockerfile, requirements, dags/ (bronze_ingestion, silver_processing)
+├── airflow/                   # Dockerfile, requirements, dags/ (bronze_ingestion, silver_processing, bronze_backfill_fdsn)
 ├── docker-compose.yml         # Airflow stack (+ optional PostGIS draft, profile db)
 ├── datalake_bronze/ datalake_silver/ datalake_gold/   # data lake layers (git-ignored)
 ├── data/raw/                  # raw landing zone (git-ignored)

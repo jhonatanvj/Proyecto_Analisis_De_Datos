@@ -47,7 +47,7 @@ docker compose --profile db up -d project-db
 * The `earthquake` table has no column for the Silver outlier flags (`is_outlier_*`) or `mag_missing`.
 * The `eruption` table stores `start_year/month/day`; Silver also has `start_time` + `time_precision` (as `event.time_precision` in the draft).
 * `rejected_record.payload` is `jsonb`, but Silver quarantine stores it as a JSON string. Cast it on load.
-* FDSN (historical earthquakes since 2010) has a client (`sources/usgs_fdsn.py`) but is not in any DAG yet; it is the main input of `--mode historical`.
+* FDSN (historical earthquakes since 2010) is loaded into Bronze by the manual DAG `bronze_backfill_fdsn` (or `scripts/run_pipeline_local.py --fdsn-backfill`) and ends in the Silver `earthquakes` topic like the feed. `--mode historical` can trigger that backfill and then load Silver into the database. The daily catch-up of revised events (`updatedafter=<watermark>`) is still to do (Workshop 3).
 
 ## Suggested next steps
 

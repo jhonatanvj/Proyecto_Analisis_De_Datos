@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 HANS_KEYS = {"vnum", "alert_level", "notice_identifier"}
-GEOJSON_SOURCES = {"usgs_feed", "gvp_volcanoes", "gvp_eruptions"}
+GEOJSON_SOURCES = {"usgs_feed", "usgs_fdsn", "gvp_volcanoes", "gvp_eruptions"}
 SCRAPE_TYPES = {"elevated", "observatory_notice"}
 
 

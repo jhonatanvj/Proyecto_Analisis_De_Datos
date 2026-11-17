@@ -157,6 +157,7 @@ Silver state & \texttt{datalake\_silver/\_state/manifest.json}, \texttt{seen\_<t
 \texttt{usgs\_feed} & API, GeoJSON & hourly & \texttt{all\_week.geojson} (1,800+ events worldwide). A 7-day window, so hourly polling loses nothing.\\
 \texttt{gvp\_volcanoes} & WFS, GeoJSON & monthly & 165 US Holocene volcanoes (\texttt{CQL\_FILTER=Country='United States'}); GVP v5.4.0.\\
 \texttt{gvp\_eruptions} & WFS, GeoJSON & monthly & Full layer (11,089 eruptions); US subset selected by volcano number in Silver.\\
+\texttt{usgs\_fdsn} & API, GeoJSON & manual, once & Historical earthquakes since 2010 within 30~km of each US volcano (about 365,000 events). Loaded by the \texttt{bronze\_backfill\_fdsn} DAG (Section~\ref{sec:backfill}).\\
 \texttt{usgs\_volcano\_updates} & \textbf{web scraping}, HTML & hourly & \url{https://www.usgs.gov/programs/VHP/volcano-updates}: server-rendered page with one block per elevated volcano and the latest notice of each observatory (AVO, CalVO, CVO, HVO, NMI, YVO). \texttt{robots.txt} allows \texttt{/programs/}.\\
 \bottomrule
 \end{longtable}
@@ -247,6 +248,13 @@ docker compose up -d --build    # first build takes a few minutes
   \item \textbf{Trigger:} \texttt{NewBronzeFileSensor}, a \texttt{FileSensor} on \texttt{datalake\_bronze/*.json} that only succeeds when a file is missing from the Silver manifest. A plain FileSensor would succeed on files processed long ago.
   \item \textbf{Sensor settings:} \texttt{poke\_interval}~=~60~s, i.e.\ how often the folder is checked. \texttt{timeout}~=~40~min is how long to wait before giving up, which keeps the sensor shorter than the hourly cycle so two runs never overlap. With \texttt{mode=reschedule} the worker slot is free between pokes. With \texttt{soft\_fail=True}, a run with nothing new ends as skipped, not failed.
   \item \textbf{Task \texttt{process}:} applies Section~\ref{sec:prep} and writes the Parquet files, the quarantine and the state. The state is updated only after all files are written, so a failed run is repeated in full next time.
+\end{itemize}
+
+\subsection{\texttt{bronze\_backfill\_fdsn} (historical earthquakes)}\label{sec:backfill}
+\begin{itemize}
+  \item \textbf{Schedule:} none; triggered by hand once, with parameters \texttt{start}, \texttt{end} (default 2010-01-01 to today) and an optional list of \texttt{vnums}.
+  \item \textbf{Tasks:} \texttt{plan} asks the FDSN \texttt{/count} endpoint how many events each volcano has. A volcano above the 20,000-events-per-request limit has its date range split in halves until every part fits; Kilauea, with 87,704 events, becomes 9 parts, and one month of the 2018 eruption alone holds 15,000 events. \texttt{fetch} is a mapped task, one instance per part, with at most 4 running at once. It downloads the part as GeoJSON and writes a Bronze file under a name it reserves exclusively, so parallel tasks never overwrite each other. \texttt{summary} adds up the events.
+  \item \textbf{Output:} \texttt{usgs\_fdsn\_YYYYMMDD\_HHMMSS.json} files. FDSN GeoJSON has the same format and event ids as the real-time feed, so \texttt{silver\_processing} handles them with the same transform and the seen-index prevents duplicates. Finding the nearest volcano was vectorised with NumPy for this volume.
 \end{itemize}
 
 \section{Results evidence}
