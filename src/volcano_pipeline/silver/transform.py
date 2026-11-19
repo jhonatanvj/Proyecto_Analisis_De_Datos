@@ -14,7 +14,8 @@ from dateutil import parser as dateparser
 
 from ..normalization.canonical import content_hash, gvp_eruption_date
 from ..normalization.geo import EARTH_RADIUS_KM, normalize_longitude
-from ..sources.usgs_hans import ALERT_LEVELS, reject_reason
+from ..sources import hans_notices
+from ..sources.usgs_hans import ALERT_LEVELS, reject_reason, valid_vnum
 from .schemas import enforce
 from .quality import iqr_outliers, robust_z_outliers
 from .text import clean_text, keyword_flags, load_stopwords, tokenize
@@ -231,6 +232,57 @@ def volcano_updates_from_scrape(envelope: dict, ctx: dict) -> tuple[str, pd.Data
     return "volcano_updates", enforce(pd.DataFrame(rows), "volcano_updates"), rejects
 
 
+def hans_volcano_map(envelope: dict | None) -> dict[str, dict]:
+    """USGS volcano code (hi3, ak111...) -> vnum, name and region, from getUSVolcanoes."""
+    out = {}
+    for r in (envelope or {}).get("payload") or []:
+        code = (r.get("volcano_cd") or "").strip().lower()
+        if code and valid_vnum(r.get("vnum")):
+            out[code] = {"vnum": int(r["vnum"]), "name": r.get("volcano_name"), "region": r.get("region")}
+    return out
+
+
+def notices_from_hans_search(envelope: dict, ctx: dict) -> tuple[str, pd.DataFrame, list[dict]]:
+    """Full notice texts. The summary paragraph and the body (footer and link lines removed) are
+    cleaned like the scraped notices; volcano codes map to vnum/region through getUSVolcanoes, and
+    the VNUMs written in the text fill the gap when a code is unknown."""
+    src, rows, rejects = envelope["source_id"], [], []
+    stopwords = load_stopwords()
+    codes_map = ctx.get("hans_volcanoes") or {}
+    for r in envelope.get("payload") or []:
+        sent = hans_notices.sent_time(r)
+        if not r.get("noticeIdentifier") or sent is None:
+            rejects.append(_reject(src, "missing_id_or_time", {k: v for k, v in r.items() if k != "noticeHtml"}))
+            continue
+        parsed = hans_notices.parse_notice(r.get("noticeHtml"))
+        text = clean_text(parsed["body_raw"])
+        if not text:
+            rejects.append(_reject(src, "empty_text", {k: v for k, v in r.items() if k != "noticeHtml"}))
+            continue
+        codes = [c.strip().lower() for c in (r.get("volcCds") or "").split(",") if c.strip()]
+        known = [codes_map[c] for c in codes if c in codes_map]
+        vnums = [v["vnum"] for v in known] or parsed["vnums_in_text"]
+        summary = clean_text(parsed["summary_raw"])
+        tokens, summary_tokens = tokenize(text, stopwords), tokenize(summary, stopwords)
+        level = parsed["alert_level"]
+        rows.append({
+            # one notice id is published in two formats (VAN and its VONA, 708 cases): id + type is the key
+            "record_id": f"usgs_hans_notice:{r['noticeIdentifier']}:{r.get('noticeTypeCd')}",
+            "content_hash": content_hash(r),
+            "notice_identifier": r["noticeIdentifier"], "sent_time": pd.Timestamp(sent),
+            "observatory": (r.get("obsAbbr") or "").lower() or None, "notice_type": r.get("noticeTypeCd"),
+            "volcano_codes": ",".join(codes) or None, "vnums": vnums, "vnum": vnums[0] if vnums else None,
+            "volcano_name": known[0]["name"] if known else None,
+            "region": known[0]["region"] if known else None, "is_region_wide": not codes and not vnums,
+            "alert_level": level, "alert_level_ord": ALERT_LEVELS.get(level), "color_code": parsed["color_code"],
+            "summary_clean": summary or None, "summary_tokens": summary_tokens,
+            "text_clean": text, "tokens": tokens, "token_count": len(tokens),
+            "text_length": len(parsed["body_raw"]), "summary_length": len(parsed["summary_raw"]),
+            "notice_url": r.get("permLink"), **keyword_flags(tokens),
+        })
+    return "notices", enforce(pd.DataFrame(rows), "notices"), rejects
+
+
 TRANSFORMS: dict[str, Transform] = {
     "usgs_feed": earthquakes_from_feed,
     "usgs_fdsn": earthquakes_from_feed,      # historical backfill: same GeoJSON format and ids
@@ -238,4 +290,5 @@ TRANSFORMS: dict[str, Transform] = {
     "gvp_volcanoes": volcanoes_from_gvp,
     "gvp_eruptions": eruptions_from_gvp,
     "usgs_volcano_updates": volcano_updates_from_scrape,
+    "usgs_hans_notices": notices_from_hans_search,
 }

@@ -29,6 +29,7 @@ from airflow.models.param import Param
 from volcano_pipeline.bronze.envelope import build_envelope
 from volcano_pipeline.bronze.fdsn_backfill import (fetch_partition, parse_day, volcano_coords_from_bronze,
                                                    volcano_partitions, write_bronze_unique)
+from volcano_pipeline.bronze.fdsn_incremental import advance_watermark
 from volcano_pipeline.bronze.validate import validate_payload
 from volcano_pipeline.config import datalake_dir, load_config, user_agent
 from volcano_pipeline.sources.http import make_session
@@ -88,6 +89,7 @@ def bronze_backfill_fdsn():
         envelope = build_envelope(ex.source_id, ex.url, ex.params, ex.http_status, ex.content,
                                   ex.payload, datetime.now(timezone.utc))
         path = write_bronze_unique(envelope, datalake_dir("bronze"))
+        advance_watermark(datalake_dir("bronze"), envelope["payload"])   # start point of the incremental mode
         result = {"vnum": part["vnum"], "start": part["start"], "end": part["end"],
                   "events": envelope["record_count"], "expected": part["expected"],
                   "file": path.name if path else None}

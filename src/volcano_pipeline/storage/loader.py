@@ -11,6 +11,9 @@ Each Silver file is loaded in one transaction:
    ``ingestion_state`` and the file name in ``silver_load_file`` are written in the same
    transaction, so data and watermark always move together.
 
+After a load that touched earthquakes, eruptions or alert notices, event_group is rebuilt
+(storage/event_groups.py).
+
 Files are loaded oldest first and, for the same timestamp, volcanoes before the tables that
 reference them. A file already listed in ``silver_load_file`` is skipped. If a file fails, its
 transaction is rolled back, a ``failed`` run is recorded and the loader stops, because later
@@ -610,6 +613,12 @@ def load_pending(silver_dir: Path, cfg: dict, mode: str = "incremental", conn=No
                 break
             log.info(json.dumps({"event": "db_load_file", **result}))
             summary["loaded"].append(result)
+        grouped = {"earthquakes", "eruptions", "alert_notices"}
+        if any(r.get("status") == "loaded" and t in grouped
+               for (t, _, _), r in zip(todo, summary["loaded"])):
+            from .event_groups import rebuild_event_groups
+
+            summary["event_groups"] = rebuild_event_groups(conn, cfg)
     finally:
         if own:
             conn.close()

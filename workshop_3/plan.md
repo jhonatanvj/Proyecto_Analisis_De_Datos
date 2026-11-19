@@ -19,7 +19,7 @@ Workshop 4 will build two Dash apps that read **only** the Gold files: `dashboar
 |---|---|
 | Bronze, Silver, Silver → PostgreSQL loader, `ingest.py`, 89 tests | Spark and Java in the Airflow image; `datalake_gold/` is empty |
 | Silver outlier and missing-value flags, quarantine with reasons | Quality-findings notebook and KPIs in PySpark |
-| Volcano Updates text with tokens and keyword flags | Text corpus is tiny (9 records); no sentiment score |
+| Volcano Updates text with tokens and keyword flags; **HANS notice archive (Part 1): 16,535 notices 2010-2026 in Silver topic `notices`, with `summary_clean` / `summary_tokens`, alert level, vnum and region** | No sentiment (activity tone) score yet |
 | | CourseProject W3: `event_group` is empty; FDSN incremental watermark (`updatedafter`) not used |
 
 Two blockers to solve first:

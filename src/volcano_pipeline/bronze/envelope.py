@@ -50,7 +50,13 @@ def _sha_of(path: Path) -> str | None:
         return None
 
 
+# incremental window sources: an empty window means "nothing new", not a file to keep
+SKIP_EMPTY = {"usgs_hans_notices", "usgs_fdsn"}
+
+
 def write_bronze(envelope: dict, directory: Path) -> Path | None:
+    if envelope["source_id"] in SKIP_EMPTY and not envelope.get("record_count"):
+        return None
     directory.mkdir(parents=True, exist_ok=True)
     previous = latest_bronze(directory, envelope["source_id"])
     if previous is not None and _sha_of(previous) == envelope["content_sha256"]:

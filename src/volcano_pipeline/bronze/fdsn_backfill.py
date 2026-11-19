@@ -18,6 +18,7 @@ from ..config import get_source
 from ..sources.http import get
 from ..storage.raw_landing import landing_name
 from .extract import Extraction
+from .fdsn_incremental import advance_watermark
 
 log = logging.getLogger(__name__)
 
@@ -155,6 +156,7 @@ def run_fdsn_backfill(volcano_coords: dict[int, tuple[float, float]], cfg: dict,
         envelope = build_envelope(ex.source_id, ex.url, ex.params, ex.http_status, ex.content,
                                   ex.payload, datetime.now(timezone.utc))
         path = write_bronze_unique(envelope, bronze_dir)
+        advance_watermark(bronze_dir, ex.payload)    # the incremental mode starts from here
         events += envelope["record_count"]
         files += path is not None
         log.info("partition %d/%d vnum %s %s -> %s: %d events", i, len(parts), part["vnum"],

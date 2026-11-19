@@ -5,10 +5,11 @@
     python ingest.py --mode incremental
     python ingest.py --mode status
 
-historical:  Bronze for the historical sources (GVP volcanoes and eruptions when due, FDSN
-             earthquakes between --start and --end), then Silver, then the database.
-incremental: Bronze for the incremental sources (HANS, USGS feed, Volcano Updates), then Silver,
-             then the database.
+historical:  Bronze for the historical sources (GVP volcanoes and eruptions, HANS volcano list when
+             due, FDSN earthquakes and the HANS notice archive between --start and --end), then
+             Silver, then the database.
+incremental: Bronze for the incremental sources (HANS, USGS feed, Volcano Updates, HANS notices
+             since the watermark), then Silver, then the database.
 status:      sources, watermarks, last runs and row counts in the database.
 
 Both loading modes are idempotent: Silver keeps only new or changed records, and the database
@@ -30,8 +31,8 @@ from volcano_pipeline.config import datalake_dir, load_config  # noqa: E402
 
 log = logging.getLogger("ingest")
 
-HISTORICAL_SOURCES = ["gvp_volcanoes", "gvp_eruptions"]
-INCREMENTAL_SOURCES = ["usgs_hans", "usgs_feed", "usgs_volcano_updates"]
+HISTORICAL_SOURCES = ["gvp_volcanoes", "gvp_eruptions", "usgs_hans_volcanoes"]
+INCREMENTAL_SOURCES = ["usgs_hans", "usgs_feed", "usgs_volcano_updates", "usgs_hans_notices", "usgs_fdsn"]
 
 
 def parse_args(argv=None):
@@ -76,6 +77,16 @@ def fetch_bronze(mode: str, args, cfg) -> bool:
                              "volcanoes": len(coords)}))
         summary = run_fdsn_backfill(coords, cfg, session, datalake_dir("bronze"), start, end)
         log.info(json.dumps({"event": "fdsn_backfill_done", **summary}, default=str))
+
+    if mode == "historical" and args.source in (None, "usgs_hans_notices"):
+        from volcano_pipeline.bronze.hans_notices import run_backfill
+        from volcano_pipeline.config import get_source
+
+        src = get_source(cfg, "usgs_hans_notices")
+        start = _day(args.start or date.fromisoformat(src.get("historical_start", cfg["project"]["historical_start"])))
+        end = _day(args.end + timedelta(days=1)) if args.end else datetime.now(timezone.utc)
+        summary = run_backfill(cfg, session, datalake_dir("bronze"), start, end)
+        log.info(json.dumps({"event": "hans_notices_backfill_done", **summary}))
     return ok
 
 
@@ -126,7 +137,8 @@ FROM source s LEFT JOIN ingestion_state st USING (source_id) ORDER BY s.role, s.
 SELECT 'volcano', count(*) FROM volcano UNION ALL SELECT 'event', count(*) FROM event
 UNION ALL SELECT 'eruption', count(*) FROM eruption UNION ALL SELECT 'earthquake', count(*) FROM earthquake
 UNION ALL SELECT 'volcano_alert', count(*) FROM volcano_alert UNION ALL SELECT 'volcano_update', count(*) FROM volcano_update
-UNION ALL SELECT 'rejected_record', count(*) FROM rejected_record UNION ALL SELECT 'ingestion_run', count(*) FROM ingestion_run""")
+UNION ALL SELECT 'rejected_record', count(*) FROM rejected_record UNION ALL SELECT 'ingestion_run', count(*) FROM ingestion_run
+UNION ALL SELECT 'event_group', count(*) FROM event_group""")
         print("\nRows: " + ", ".join(f"{t} {n:,}" for t, n in cur.fetchall()))
         cur.execute("SELECT count(*) FROM silver_load_file")
         loaded = cur.fetchone()[0]

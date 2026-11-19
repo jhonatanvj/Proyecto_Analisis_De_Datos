@@ -24,6 +24,7 @@ Volcanic activity: unrest and eruptions of the volcanoes of the **United States*
 | `gvp_volcanoes`, `gvp_eruptions` | Smithsonian GVP *Volcanoes of the World* (WFS) | historical | GeoJSON | Cite the database version and DOI (v5.4.0, 7 Aug 2026, doi:10.5479/si.GVP.VOTW5-2026.5.4) |
 | `usgs_fdsn` | USGS FDSN Event Web Service (ComCat) | historical (one-off backfill DAG) | GeoJSON (CSV in Workshop 1) | Public domain, credit USGS |
 | `usgs_hans` | USGS HANS public API (alert level + aviation colour code) | incremental (hourly) | JSON | Public domain, credit USGS Volcano Hazards Program |
+| `usgs_hans_notices` | USGS HANS notice search: full text of every notice since 2010 (Workshop 3 text corpus) | historical backfill (`bronze_backfill_hans_notices`) + incremental from a watermark (hourly) | JSON | Public domain, credit USGS Volcano Hazards Program |
 | `usgs_feed` | USGS real-time GeoJSON feed `all_week` | incremental (minutes) | GeoJSON | Public domain, credit USGS |
 | `usgs_volcano_updates` | USGS Volcano Updates page (**web scraping**, BeautifulSoup) | incremental (hourly) | HTML → JSON records | Public domain, credit USGS Volcano Hazards Program |
 | `gvp_weekly_rss` | Smithsonian / USGS Weekly Volcanic Activity Report | optional (weekly context) | RSS XML | Cite GVP Weekly Report |
@@ -174,8 +175,11 @@ The `gold_processing` DAG runs every Monday at 03:00 UTC (or *Trigger DAG* in th
 * Since Workshop 3 each Silver topic has its own folder (`datalake_silver/earthquakes/`...). A clone with Workshop 2 data moves its files once with `python scripts/migrate_silver_layout.py` (DAGs paused).
 * Spark tests need Java 8/11/17. On the host they are skipped when Java does not fit; run everything inside the image:
 
+* **After every `git pull` that touches `airflow/Dockerfile` or a requirements file, run `docker compose up -d --build`.** Restarting Docker Desktop brings the old containers back with the old image (seen on 2026-11-19: `load_to_database` failed with `No module named 'psycopg'`).
+* New SQL files (`sql/00N_*.sql`) only run on an empty database volume; on an existing one apply them by hand, e.g. `docker compose exec -T project-db psql -U volcano -d volcano < sql/004_workshop3_sources.sql`.
+
 ```bash
-docker compose build                                              # after pulling (new Java/PySpark layers)
+docker compose up -d --build                                      # after pulling (new Java/PySpark layers)
 docker compose run --rm airflow-scheduler airflow dags test gold_processing   # one full Gold run
 docker compose run --rm airflow-scheduler pytest -q               # all tests, Spark included
 ```

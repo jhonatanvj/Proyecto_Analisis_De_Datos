@@ -92,3 +92,4 @@ def test_volume_total_counts_every_topic(spark, silver_dir):
     rows = {r["dimension"]: r["value"] for r in volume_total(spark, read_silver(spark, silver_dir)).collect()}
     assert rows["eruptions"] == len(pd.read_parquet(silver_dir / "eruptions"))
     assert set(rows) == {"volcanoes", "eruptions", "earthquakes", "alert_notices", "volcano_updates", "quarantine"}
+    # notices: no file in the Workshop 2 samples, so the topic is absent, not an error

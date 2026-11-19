@@ -3,13 +3,13 @@
 spark.read.parquet(<folder>) reads every Parquet file of a folder as one DataFrame, the same call
 that reads an S3 or Azure Data Lake prefix in production. Each Silver topic has its own folder
 (datalake_silver/<topic>/), so all the files read together share one schema. The whole
-datalake_silver/ folder is not read at once: it mixes five schemas plus the _state/ files.
+datalake_silver/ folder is not read at once: it mixes six schemas plus the _state/ files.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-TOPICS = ["volcanoes", "eruptions", "earthquakes", "alert_notices", "volcano_updates"]
+TOPICS = ["volcanoes", "eruptions", "earthquakes", "alert_notices", "volcano_updates", "notices"]
 
 
 def topic_dir(silver_dir: Path, topic: str) -> Path:

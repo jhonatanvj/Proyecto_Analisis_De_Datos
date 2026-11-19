@@ -123,3 +123,7 @@ def test_loading_twice_creates_no_duplicates(tmp_path):
         with conn.cursor() as cur:
             cur.execute("SELECT count(*) FROM event")
             assert cur.fetchone()[0] == events
+        # event groups were built by the first load and a rebuild gives the same rows
+        from volcano_pipeline.storage.event_groups import rebuild_event_groups
+
+        assert first["event_groups"] == rebuild_event_groups(conn, load_config())

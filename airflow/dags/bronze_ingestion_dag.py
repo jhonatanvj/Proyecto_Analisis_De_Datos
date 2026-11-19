@@ -1,8 +1,10 @@
 """Bronze ingestion: pull each source and keep its payload as a JSON file in datalake_bronze/.
 
 Sources (config/sources.yaml):
-  * API: USGS HANS monitored volcanoes, USGS earthquake feed (all_week)
-  * API, monthly: Smithsonian GVP volcanoes and eruptions (static catalogue)
+  * API: USGS HANS monitored volcanoes, USGS earthquake feed (all_week), HANS notice texts sent
+    since the watermark (usgs_hans_notices; the archive is loaded by bronze_backfill_hans_notices),
+    FDSN earthquakes created or revised since the watermark (usgs_fdsn, updatedafter)
+  * API, monthly: Smithsonian GVP volcanoes and eruptions (static catalogue), HANS US volcano list
   * Web scraping: USGS Volcano Updates page
 
 Each source runs extract -> validate -> persist inside its own task group, mapped per source, so
@@ -23,8 +25,8 @@ from airflow.decorators import dag, task, task_group
 from airflow.exceptions import AirflowFailException
 
 from volcano_pipeline.bronze.envelope import build_envelope, write_bronze
-from volcano_pipeline.bronze.extract import (API_SOURCES, GVP_SOURCES, SCRAPE_SOURCE, extract, gvp_due,
-                                             mark_checked)
+from volcano_pipeline.bronze.extract import (API_SOURCES, MONTHLY_SOURCES, SCRAPE_SOURCE, after_persist,
+                                             extract, gvp_due)
 from volcano_pipeline.bronze.validate import validate_payload
 from volcano_pipeline.config import datalake_dir, load_config, user_agent
 from volcano_pipeline.sources.http import make_session
@@ -39,7 +41,7 @@ def _log(event: str, **fields) -> None:
 def _extract_to_tmp(source_id: str) -> dict:
     cfg = load_config()
     when = datetime.now(timezone.utc)
-    ex = extract(source_id, cfg, make_session(user_agent(cfg)))
+    ex = extract(source_id, cfg, make_session(user_agent(cfg)), datalake_dir("bronze"))
     envelope = build_envelope(source_id, ex.url, ex.params, ex.http_status, ex.content, ex.payload, when)
     tmp_dir = datalake_dir("bronze") / "_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -110,8 +112,7 @@ def bronze_ingestion():
         envelope = json.loads(tmp.read_text(encoding="utf-8"))
         path = write_bronze(envelope, datalake_dir("bronze"))
         tmp.unlink(missing_ok=True)
-        if ref["source_id"] in GVP_SOURCES:
-            mark_checked(datalake_dir("bronze"), ref["source_id"], datetime.now(timezone.utc))
+        after_persist(ref["source_id"], envelope["payload"], datalake_dir("bronze"), datetime.now(timezone.utc))
         status = "written" if path else "unchanged"
         _log(status, source_id=ref["source_id"], file=path.name if path else None)
         return {"source_id": ref["source_id"], "status": status, "file": path.name if path else None}
@@ -130,7 +131,7 @@ def bronze_ingestion():
 
     cleanup = clean_tmp()
     cleanup >> [api_source.expand(source_id=list(API_SOURCES)),
-                gvp_source.expand(source_id=list(GVP_SOURCES)),
+                gvp_source.expand(source_id=list(MONTHLY_SOURCES)),
                 scrape_source()]
 
 

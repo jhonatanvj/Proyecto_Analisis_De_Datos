@@ -25,7 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-ALL_SOURCES = ["gvp_volcanoes", "gvp_eruptions", "usgs_hans", "usgs_feed", "usgs_volcano_updates"]
+ALL_SOURCES = ["gvp_volcanoes", "gvp_eruptions", "usgs_hans", "usgs_feed", "usgs_volcano_updates",
+               "usgs_hans_volcanoes", "usgs_hans_notices", "usgs_fdsn"]
 
 
 def main() -> int:
