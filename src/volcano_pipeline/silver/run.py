@@ -19,7 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 from ..normalization.canonical import content_hash
-from .io import write_quarantine, write_topic
+from .io import topic_path, write_quarantine, write_topic
 from .state import filter_unseen, load_manifest, mark_processed, update_seen
 from .transform import TRANSFORMS, build_context
 
@@ -59,7 +59,7 @@ def _context(bronze_dir: Path, radius_km: float, min_magnitude: float | None) ->
 
 def _output_paths(silver_dir: Path, topics: list[str], when: datetime) -> list[Path]:
     stamp = f"{when:%Y%m%d_%H%M%S}"
-    return ([silver_dir / f"{t}_{stamp}.parquet" for t in topics]
+    return ([topic_path(silver_dir, t, when) for t in topics]
             + [silver_dir / "quarantine" / f"rejected_{stamp}.parquet"])
 
 
@@ -144,7 +144,7 @@ def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] |
         fresh = filter_unseen(pd.concat(parts, ignore_index=True), sdir, topic)
         path = write_topic(fresh, silver_dir, topic, when)
         if path is not None:
-            written[topic] = path.name
+            written[topic] = path.relative_to(silver_dir).as_posix()
             fresh_by_topic[topic] = fresh
     rejects, rejects_seen = _new_rejects(rejects, sdir)
     write_quarantine(rejects, silver_dir, when)

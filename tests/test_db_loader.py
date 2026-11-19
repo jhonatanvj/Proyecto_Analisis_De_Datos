@@ -23,8 +23,9 @@ def _sample(topic: str) -> pd.DataFrame:
 
 
 def test_silver_files_load_volcanoes_first_and_quarantine_last(tmp_path):
-    for name in ["earthquakes_20261117_000000.parquet", "volcanoes_20261117_000000.parquet",
-                 "eruptions_20261116_000000.parquet", "notes.txt", "seen_x.parquet"]:
+    for name in ["earthquakes/earthquakes_20261117_000000.parquet", "volcanoes/volcanoes_20261117_000000.parquet",
+                 "eruptions_20261116_000000.parquet", "notes.txt", "seen_x.parquet", "_state/seen_x.parquet"]:
+        (tmp_path / name).parent.mkdir(exist_ok=True)
         (tmp_path / name).touch()
     (tmp_path / "quarantine").mkdir()
     (tmp_path / "quarantine" / "rejected_20261117_000000.parquet").touch()
@@ -96,7 +97,8 @@ def test_watermarks_are_fixed_width_utc_strings_per_source():
 def test_py_values_turn_numpy_and_missing_values_into_python():
     assert loader.py_values(pd.Series([1, None], dtype="Int64")) == [1, None]
     assert loader.py_values(pd.Series([np.array(["ash", "lava"]), None])) == [["ash", "lava"], None]
-    ts = loader.py_values(pd.Series(pd.to_datetime(["1500-01-01", None], utc=True).astype("datetime64[us, UTC]")))
+    old = np.array(["1500-01-01", "NaT"], dtype="datetime64[us]")   # before 1677: needs microseconds
+    ts = loader.py_values(pd.Series(old).dt.tz_localize("UTC"))
     assert ts[0].year == 1500 and ts[1] is None
     assert loader.py_values(pd.Series(["a", np.nan], dtype="category")) == ["a", None]
 

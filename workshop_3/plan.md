@@ -73,7 +73,7 @@ Hand-off to Parts 2 and 3: a working Gold DAG that writes two (empty-but-valid) 
 
 ## Working rules
 
-* One branch per part (`w3-platform`, `w3-governance`, `w3-storytelling`), merged into `main` through a pull request reviewed by another member.
+* One branch per part (`workshop-3` for Part 1, `w3-governance`, `w3-storytelling`), merged into `main` through a pull request reviewed by another member. Parts 2 and 3 branch off `workshop-3` once Part 1 is merged.
 * Code comments and documentation in English; no keys or `.env` in commits.
 * `pytest -q` must pass before opening a pull request.
 * Each member must be able to explain their part in the final defense (individual grade).

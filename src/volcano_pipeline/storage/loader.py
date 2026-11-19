@@ -50,9 +50,15 @@ class SchemaMissing(RuntimeError):
 # --------------------------------------------------------------------------- files and sources
 
 def silver_files(silver_dir: Path) -> list[tuple[str, str, Path]]:
-    """(topic, name relative to silver_dir, path) for every Silver file, in load order."""
+    """(topic, load name, path) for every Silver file, in load order.
+
+    Topic files live in datalake_silver/<topic>/ (older runs wrote them to datalake_silver/
+    directly; both are read). The load name of a topic file is its bare file name, so moving a
+    file between the two layouts does not load it again; quarantine files are 'quarantine/<name>'.
+    """
     found = []
     candidates = [(p, p.name) for p in silver_dir.glob("*.parquet")]
+    candidates += [(p, p.name) for t in TOPIC_ORDER[:-1] for p in (silver_dir / t).glob(f"{t}_*.parquet")]
     candidates += [(p, f"quarantine/{p.name}") for p in (silver_dir / "quarantine").glob("rejected_*.parquet")]
     for path, rel in candidates:
         m = SILVER_NAME.match(path.name)

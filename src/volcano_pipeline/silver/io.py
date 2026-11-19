@@ -1,4 +1,9 @@
-"""Write Silver topic files and the quarantine file, named <name>_YYYYMMDD_HHMMSS.parquet (UTC)."""
+"""Write Silver topic files and the quarantine file, named <name>_YYYYMMDD_HHMMSS.parquet (UTC).
+
+Each topic has its own folder (datalake_silver/<topic>/), so the Gold DAG can read one topic as
+a single DataFrame with spark.read.parquet("datalake_silver/<topic>/"): every file in that folder
+has the same schema. Rejected records go to datalake_silver/quarantine/.
+"""
 from __future__ import annotations
 
 import json
@@ -15,6 +20,10 @@ def _name(prefix: str, when: datetime) -> str:
     return f"{prefix}_{when.astimezone(timezone.utc):%Y%m%d_%H%M%S}.parquet"
 
 
+def topic_path(silver_dir: Path, topic: str, when: datetime) -> Path:
+    return silver_dir / topic / _name(topic, when)
+
+
 def _write(table, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".parquet.part")
@@ -28,7 +37,7 @@ def write_topic(df: pd.DataFrame, silver_dir: Path, topic: str, when: datetime) 
     if df.empty:
         return None
     table = to_table(enforce(df, topic), SCHEMAS[topic])
-    return _write(table, silver_dir / _name(topic, when))
+    return _write(table, topic_path(silver_dir, topic, when))
 
 
 def write_quarantine(rows: list[dict], silver_dir: Path, when: datetime) -> Path | None:

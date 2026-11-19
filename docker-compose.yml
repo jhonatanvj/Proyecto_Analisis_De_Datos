@@ -25,6 +25,11 @@ x-airflow-common: &airflow-common
     # project database seen from inside the Docker network (overrides localhost/POSTGRES_PORT from .env)
     POSTGRES_HOST: project-db
     POSTGRES_PORT: "5432"
+    # PySpark in local mode for the Gold DAG (read by volcano_pipeline/gold/spark.py).
+    # Docker Desktop needs about 6 GB of memory for Airflow plus a 1 GB Spark driver.
+    SPARK_MASTER: local[*]
+    SPARK_DRIVER_MEMORY: ${SPARK_DRIVER_MEMORY:-1g}
+    SPARK_SHUFFLE_PARTITIONS: "8"
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
@@ -34,6 +39,10 @@ x-airflow-common: &airflow-common
     - ./datalake_bronze:/opt/airflow/datalake_bronze
     - ./datalake_silver:/opt/airflow/datalake_silver
     - ./datalake_gold:/opt/airflow/datalake_gold
+    # only for running pytest inside the image (Spark needs Java 17, see README)
+    - ./tests:/opt/airflow/tests
+    - ./pytest.ini:/opt/airflow/pytest.ini:ro
+    - ./workshop_2/samples:/opt/airflow/workshop_2/samples:ro
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-depends
     postgres:

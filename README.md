@@ -166,6 +166,20 @@ docker compose exec project-db psql -U volcano -d volcano -c "\dt"
 
 Connect from pgAdmin, DBeaver or any SQL client: host `localhost`, port `POSTGRES_PORT` (5432, or 5433 if a local PostgreSQL already uses 5432), database `volcano`, user `volcano`, password `POSTGRES_PASSWORD` from `.env`. Step by step, how to apply schema changes and next steps: [`docs/database_handoff.md`](docs/database_handoff.md).
 
+### 8. Gold layer (PySpark, Workshop 3)
+
+The `gold_processing` DAG runs every Monday at 03:00 UTC (or *Trigger DAG* in the UI). It reads each Silver topic folder with `spark.read.parquet("datalake_silver/<topic>/")` in local mode and writes `datalake_gold/governance_YYYYMMDD_HHMMSS.parquet` and `datalake_gold/storytelling_YYYYMMDD_HHMMSS.parquet`. Both use one long format (`section, metric, dimension, period, value, unit, generated_utc`, see `src/volcano_pipeline/gold/contract.py`); to add a KPI or an aggregation, add a function to `gold/governance.py` or `gold/storytelling.py`. Work split: [`workshop_3/plan.md`](workshop_3/plan.md).
+
+* Spark runs inside the Airflow image (Java 17 + PySpark 3.5.4). Give Docker Desktop about **6 GB of memory**; the Spark driver uses `SPARK_DRIVER_MEMORY` (1g by default).
+* Since Workshop 3 each Silver topic has its own folder (`datalake_silver/earthquakes/`...). A clone with Workshop 2 data moves its files once with `python scripts/migrate_silver_layout.py` (DAGs paused).
+* Spark tests need Java 8/11/17. On the host they are skipped when Java does not fit; run everything inside the image:
+
+```bash
+docker compose build                                              # after pulling (new Java/PySpark layers)
+docker compose run --rm airflow-scheduler airflow dags test gold_processing   # one full Gold run
+docker compose run --rm airflow-scheduler pytest -q               # all tests, Spark included
+```
+
 ### Troubleshooting
 
 | Symptom | Fix |
