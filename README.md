@@ -181,7 +181,7 @@ The `gold_processing` DAG runs every Monday at 03:00 UTC (or *Trigger DAG* in th
 ```bash
 docker compose up -d --build                                      # after pulling (new Java/PySpark layers)
 docker compose run --rm airflow-scheduler airflow dags test gold_processing   # one full Gold run
-docker compose run --rm airflow-scheduler pytest -q               # all tests, Spark included
+docker compose run --rm airflow-scheduler python -m pytest -q               # all tests, Spark included
 ```
 
 ### Troubleshooting

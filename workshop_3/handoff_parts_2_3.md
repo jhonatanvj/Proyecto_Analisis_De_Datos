@@ -67,7 +67,7 @@ Conventions:
 * Spark needs Java 8/11/17. On the host the Spark tests skip themselves if Java does not fit; run them in the image:
 
 ```bash
-docker compose run --rm airflow-scheduler pytest -q tests/test_gold.py
+docker compose run --rm airflow-scheduler python -m pytest -q tests/test_gold.py
 docker compose run --rm airflow-scheduler airflow dags test gold_processing     # full run, ~3-5 min
 ```
 

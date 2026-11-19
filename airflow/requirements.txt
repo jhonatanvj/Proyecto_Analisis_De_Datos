@@ -10,5 +10,5 @@ pyarrow
 psycopg[binary]
 # Gold layer (Workshop 3); pinned to 3.5.4 by the Airflow constraints file
 pyspark
-# lets the Spark tests run inside the image: docker compose run --rm airflow-scheduler pytest -q
+# lets the Spark tests run inside the image: docker compose run --rm airflow-scheduler python -m pytest -q
 pytest

@@ -3,7 +3,7 @@
 Spark 3.5 needs Java 8, 11 or 17. Where that is not available (e.g. Windows with a newer Java)
 these tests are skipped; run them inside the Airflow image instead:
 
-    docker compose run --rm airflow-scheduler pytest -q tests/test_gold.py
+    docker compose run --rm airflow-scheduler python -m pytest -q tests/test_gold.py
 """
 from __future__ import annotations
 
