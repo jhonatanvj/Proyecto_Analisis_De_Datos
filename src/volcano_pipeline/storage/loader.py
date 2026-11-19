@@ -464,8 +464,8 @@ FROM stage s LEFT JOIN source src ON src.source_id = s.source_id"""],
 def ensure_schema(cur) -> None:
     cur.execute("SELECT to_regclass('public.silver_load_file'), to_regclass('public.volcano_update')")
     if None in cur.fetchone():
-        raise SchemaMissing("project database is missing loader tables: apply sql/002_silver_indicators.sql "
-                            "and sql/003_loader_state.sql (see docs/database_handoff.md)")
+        raise SchemaMissing("project database is missing loader tables: run `docker compose up -d db-migrate` "
+                            "(applies sql/*.sql, see docs/database_handoff.md)")
 
 
 def loaded_files(cur) -> set[str]:

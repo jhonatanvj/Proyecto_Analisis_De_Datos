@@ -1,6 +1,5 @@
 -- Workshop 3: sources added to config/sources.yaml (HANS notice texts and the HANS volcano list).
--- Idempotent; on an existing database apply by hand:
---   docker compose exec -T project-db psql -U volcano -d volcano < sql/004_workshop3_sources.sql
+-- Idempotent, applied by the db-migrate service.
 
 INSERT INTO source (source_id, name, url, format, license, citation, role) VALUES
  ('usgs_hans_notices', 'USGS HANS notice search - full text of every volcano notice',

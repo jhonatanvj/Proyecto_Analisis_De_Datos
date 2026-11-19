@@ -1,6 +1,5 @@
 -- Loader bookkeeping: which Silver Parquet files are already in the database.
--- Runs after 002 on the first start of project-db. Idempotent, so it can also be applied by hand:
---   docker compose exec -T project-db psql -U volcano -d volcano < sql/003_loader_state.sql
+-- Idempotent, applied by the db-migrate service after 002.
 --
 -- The loader (src/volcano_pipeline/storage/loader.py) loads each Silver file in one transaction:
 -- domain rows + ingestion_run + ingestion_state.watermark + one row here. A file listed here is

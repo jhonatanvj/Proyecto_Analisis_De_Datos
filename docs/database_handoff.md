@@ -16,14 +16,16 @@ The Workshop 3 document asks for a Gold layer of Parquet files built with PySpar
 
 | Piece | Where | State |
 |---|---|---|
-| Base schema (DDL) | [`sql/001_schema_draft.sql`](../sql/001_schema_draft.sql) | Workshop 1: 12 tables + view `volcano_current_alert` |
+| Base schema (DDL) | [`sql/001_schema_draft.sql`](../sql/001_schema_draft.sql) | Workshop 1: 12 tables + view `volcano_current_alert`. Idempotent since Workshop 3 |
 | Silver indicators (DDL) | [`sql/002_silver_indicators.sql`](../sql/002_silver_indicators.sql) | Workshop 2: quality flags, lineage, `volcano_update`, view `silver_quality_indicators`, `source` rows. Idempotent |
 | Loader state (DDL) | [`sql/003_loader_state.sql`](../sql/003_loader_state.sql) | Table `silver_load_file` (Silver files already loaded) and two indexes. Idempotent |
+| Workshop 3 sources | [`sql/004_workshop3_sources.sql`](../sql/004_workshop3_sources.sql) | `source` rows for `usgs_hans_notices` and `usgs_hans_volcanoes`. Idempotent |
+| Schema migrations | service `db-migrate`, [`scripts/db_migrate.sh`](../scripts/db_migrate.sh) | Applies new or changed `sql/*.sql` on every `docker compose up`; table `schema_migration` |
 | Loader | [`src/volcano_pipeline/storage/loader.py`](../src/volcano_pipeline/storage/loader.py), connection in [`db.py`](../src/volcano_pipeline/storage/db.py) | Silver Parquet → database, see below |
 | ER diagram | [`docs/er_diagram.png`](er_diagram.png) (source `er_diagram.mmd`) | Matches 001; does not show the 002 columns yet |
 | Mapping source field → table/column | [`workshop_1/mapping.md`](../workshop_1/mapping.md), [`mapping.csv`](../workshop_1/mapping.csv) | Workshop 1 |
 | Ingestion contract (upserts, watermarks, retries) | [`workshop_1/ingestion_contract.md`](../workshop_1/ingestion_contract.md) | Workshop 1 |
-| PostGIS container | service `project-db` in [`docker-compose.yml`](../docker-compose.yml) | Starts with `docker compose up -d`; runs every `.sql` in `sql/` (name order) on first start |
+| PostGIS container | service `project-db` in [`docker-compose.yml`](../docker-compose.yml) | Starts with `docker compose up -d`; the schema comes from `db-migrate` |
 | Connection settings | `POSTGRES_*` in `.env` (copy of `.env.example`) | Host `localhost`, port 5432 (5433 if a local PostgreSQL uses 5432), db/user `volcano`. Airflow uses `project-db:5432` (set in `docker-compose.yml`) |
 | Clean data to load | `datalake_silver/<topic>_*.parquet` (topics `volcanoes`, `eruptions`, `earthquakes`, `alert_notices`, `volcano_updates`) and `datalake_silver/quarantine/` | Running every hour |
 | CLI | [`ingest.py`](../ingest.py) | `historical` / `incremental`: Bronze → Silver → database; `--skip-fetch` only loads pending files; `status`: watermarks, last runs, row counts |
@@ -43,7 +45,7 @@ If it does not start:
 | `docker compose up -d` does not create `project-db` | Old copy of `docker-compose.yml` with `profiles: ["db"]`. Pull the latest branch |
 | `port is already allocated` / `address already in use` on 5432 | A local PostgreSQL (or another container) uses 5432. Set `POSTGRES_PORT=5433` in `.env`, `docker compose up -d project-db`, and use 5433 in DBeaver |
 | DBeaver: `password authentication failed` | The password was fixed when the volume was created. If `.env` changed afterwards, reset the volume (below) |
-| Tables are missing / old columns | The `.sql` files only run on an **empty** volume. Apply `002` by hand or reset the volume (below) |
+| Tables are missing / old columns | `db-migrate` did not run (e.g. only `project-db` was started). Run `docker compose up -d db-migrate` and read `docker compose logs db-migrate` |
 
 ## Connect with pgAdmin
 
@@ -71,10 +73,17 @@ Column comments (Silver meaning of each flag) appear in DBeaver under *Propertie
 
 ## Apply schema changes
 
-Apply only `002` to an existing database (keeps data):
+The `db-migrate` service runs on every `docker compose up -d`: it applies, in name order, each `sql/*.sql` that is new or whose content changed since it was applied (SHA-256 in the table `schema_migration`), each file in one transaction with its `schema_migration` row. A pulled SQL file therefore reaches every clone without manual steps.
+
+Rules for SQL files:
+
+* Add a new numbered file (`005_...sql`) for a change; edit an existing file only to fix it (it will be applied again).
+* Every file must be **idempotent**: `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE OR REPLACE VIEW`, `INSERT ... ON CONFLICT DO NOTHING`. A database created before `db-migrate` existed gets every file once more.
 
 ```bash
-docker compose exec -T project-db psql -U volcano -d volcano < sql/002_silver_indicators.sql
+docker compose up -d db-migrate                    # apply now, e.g. right after a git pull
+docker compose logs db-migrate                     # "N file(s) applied, database volcano is up to date"
+docker compose exec project-db psql -U volcano -d volcano -c "SELECT * FROM schema_migration"
 ```
 
 Recreate the database from zero (deletes its data, not the Airflow metadata):
@@ -118,11 +127,11 @@ Cases found when the Silver samples were first loaded by hand (2026-11-16) and h
 * Eruptions: `start_month` / `start_day` are filled from `start_time` according to `time_precision`; BCE eruptions keep `event_time = NULL` and `time_precision = 'bce'`.
 * `volcano_earthquake` gets one link per earthquake: the nearest volcano within the radius (Silver `nearest_vnum`).
 
-Tests: [`tests/test_db_loader.py`](../tests/test_db_loader.py) checks the row preparation on the recorded Silver samples, without a database. The end-to-end test (load twice, no duplicates) runs only when `VOLCANO_TEST_DSN` points to a disposable database with `sql/001-003` applied:
+Tests: [`tests/test_db_loader.py`](../tests/test_db_loader.py) checks the row preparation on the recorded Silver samples, without a database. The end-to-end test (load twice, no duplicates) runs only when `VOLCANO_TEST_DSN` points to a disposable database with every `sql/*.sql` applied:
 
 ```bash
 docker compose exec project-db psql -U volcano -d volcano -c "CREATE DATABASE volcano_test"
-for f in sql/00*.sql; do docker compose exec -T project-db psql -q -U volcano -d volcano_test < $f; done
+docker compose run --rm -e PGDATABASE=volcano_test db-migrate
 VOLCANO_TEST_DSN="host=localhost port=5433 dbname=volcano_test user=volcano password=..." pytest tests/test_db_loader.py
 ```
 
@@ -131,4 +140,4 @@ VOLCANO_TEST_DSN="host=localhost port=5433 dbname=volcano_test user=volcano pass
 * `volcano_earthquake` only stores the nearest volcano; all volcanoes within the radius (many-to-many) need a PostGIS query (`ST_DWithin`) after the load.
 * `event_group` (cross-source matching) is empty: Workshop 3.
 * `--mode incremental` still downloads the full 7-day feed; using the watermark in the FDSN query (`updatedafter=<watermark>`) is Workshop 3.
-* The ER diagram should be regenerated with the 002/003 columns, `volcano_update` and `silver_load_file`.
+* The ER diagram should be regenerated with the 002/003 columns, `volcano_update`, `silver_load_file` and `schema_migration`.

@@ -1,10 +1,11 @@
--- First draft of the schema (Workshop 1). The final version comes with Workshop 2.
+-- Base schema (Workshop 1). Later files only add to it (002, 003...).
+-- Idempotent like every file in sql/: the db-migrate service may run it on an existing database.
 -- PostgreSQL 16 + PostGIS. Times are stored in UTC and coordinates in WGS84 (EPSG:4326).
 -- Scope: US volcanoes (GVP list filtered by country, plus the volcanoes in USGS HANS).
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- Tables shared by every team (course data model)
-CREATE TABLE source (
+CREATE TABLE IF NOT EXISTS source (
     source_id     text PRIMARY KEY,               -- e.g. 'usgs_feed'
     name          text NOT NULL,
     url           text NOT NULL,
@@ -14,7 +15,7 @@ CREATE TABLE source (
     role          text CHECK (role IN ('historical','incremental','optional'))
 );
 
-CREATE TABLE ingestion_run (
+CREATE TABLE IF NOT EXISTS ingestion_run (
     run_id        bigserial PRIMARY KEY,
     mode          text NOT NULL CHECK (mode IN ('historical','incremental')),
     source_id     text REFERENCES source,
@@ -29,7 +30,7 @@ CREATE TABLE ingestion_run (
     error_message text
 );
 
-CREATE TABLE ingestion_state (
+CREATE TABLE IF NOT EXISTS ingestion_state (
     source_id     text PRIMARY KEY REFERENCES source,
     watermark     text NOT NULL,                  -- typed per source (epoch ms, ISO date, db version)
     last_success  timestamptz,
@@ -38,7 +39,7 @@ CREATE TABLE ingestion_state (
     last_run_id   bigint REFERENCES ingestion_run
 );
 
-CREATE TABLE event (
+CREATE TABLE IF NOT EXISTS event (
     event_id        text PRIMARY KEY,             -- '<namespace>:<source native id>'
     source_id       text NOT NULL REFERENCES source,
     event_type      text NOT NULL CHECK (event_type IN ('eruption','earthquake','alert_notice','activity_report')),
@@ -56,10 +57,10 @@ CREATE TABLE event (
     last_seen_run   bigint REFERENCES ingestion_run,
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX event_time_idx ON event (event_type, event_time);
-CREATE INDEX event_geom_idx ON event USING gist (geom);
+CREATE INDEX IF NOT EXISTS event_time_idx ON event (event_type, event_time);
+CREATE INDEX IF NOT EXISTS event_geom_idx ON event USING gist (geom);
 
-CREATE TABLE event_group (
+CREATE TABLE IF NOT EXISTS event_group (
     group_id      text NOT NULL,                  -- e.g. 'vnum:351020:2026-W44'
     event_id      text NOT NULL REFERENCES event,
     rule          text NOT NULL,                  -- matching rule that produced the link
@@ -67,7 +68,7 @@ CREATE TABLE event_group (
     PRIMARY KEY (group_id, event_id)
 );
 
-CREATE TABLE rejected_record (
+CREATE TABLE IF NOT EXISTS rejected_record (
     rejected_id   bigserial PRIMARY KEY,
     run_id        bigint REFERENCES ingestion_run,
     source_id     text REFERENCES source,
@@ -78,7 +79,7 @@ CREATE TABLE rejected_record (
 
 -- Volcano-specific tables
 -- Static geographic entity: one row per Holocene volcano (GVP)
-CREATE TABLE volcano (
+CREATE TABLE IF NOT EXISTS volcano (
     volcano_number      integer PRIMARY KEY,      -- GVP vnum (6 digits)
     name                text NOT NULL,
     country             text,
@@ -100,9 +101,9 @@ CREATE TABLE volcano (
     gvp_db_version      text,                     -- NULL for volcanoes that come only from HANS
     content_hash        char(64) NOT NULL
 );
-CREATE INDEX volcano_geom_idx ON volcano USING gist (geom);
+CREATE INDEX IF NOT EXISTS volcano_geom_idx ON volcano USING gist (geom);
 
-CREATE TABLE eruption (
+CREATE TABLE IF NOT EXISTS eruption (
     event_id            text PRIMARY KEY REFERENCES event,
     eruption_number     integer UNIQUE NOT NULL,
     volcano_number      integer NOT NULL REFERENCES volcano,
@@ -116,7 +117,7 @@ CREATE TABLE eruption (
     evidence_method     text
 );
 
-CREATE TABLE earthquake (
+CREATE TABLE IF NOT EXISTS earthquake (
     event_id            text PRIMARY KEY REFERENCES event,
     usgs_id             text UNIQUE NOT NULL,
     magnitude           double precision,
@@ -129,7 +130,7 @@ CREATE TABLE earthquake (
 );
 
 -- Link earthquake -> nearby volcano(es) within the configured radius
-CREATE TABLE volcano_earthquake (
+CREATE TABLE IF NOT EXISTS volcano_earthquake (
     volcano_number      integer REFERENCES volcano,
     event_id            text REFERENCES earthquake,
     distance_km         double precision NOT NULL,
@@ -137,7 +138,7 @@ CREATE TABLE volcano_earthquake (
 );
 
 -- Official USGS alert notices (HANS): one row per (volcano, notice)
-CREATE TABLE volcano_alert (
+CREATE TABLE IF NOT EXISTS volcano_alert (
     event_id            text PRIMARY KEY REFERENCES event,   -- 'usgs_hans:<vnum>:<notice_identifier>'
     volcano_number      integer NOT NULL REFERENCES volcano,
     notice_identifier   text NOT NULL,            -- e.g. 'DOI-USGS-AVO-2026-11-09T20:51:49+00:00'
@@ -151,10 +152,10 @@ CREATE TABLE volcano_alert (
     notice_url          text,
     UNIQUE (volcano_number, notice_identifier)
 );
-CREATE INDEX volcano_alert_latest_idx ON volcano_alert (volcano_number, sent_utc DESC);
+CREATE INDEX IF NOT EXISTS volcano_alert_latest_idx ON volcano_alert (volcano_number, sent_utc DESC);
 
 -- Current state per volcano (also covers volcanoes that never had a notice: NORMAL/GREEN by default)
-CREATE VIEW volcano_current_alert AS
+CREATE OR REPLACE VIEW volcano_current_alert AS
 SELECT DISTINCT ON (v.volcano_number)
        v.volcano_number, v.name,
        coalesce(a.alert_level, 'NORMAL') AS alert_level,
@@ -165,7 +166,7 @@ LEFT JOIN volcano_alert a USING (volcano_number)
 ORDER BY v.volcano_number, a.sent_utc DESC NULLS LAST;
 
 -- Optional source: Smithsonian / USGS Weekly Volcanic Activity Report
-CREATE TABLE activity_report (
+CREATE TABLE IF NOT EXISTS activity_report (
     event_id            text PRIMARY KEY REFERENCES event,
     volcano_number      integer REFERENCES volcano, -- NULL until linked by name (quarantine otherwise)
     volcano_name_raw    text NOT NULL,

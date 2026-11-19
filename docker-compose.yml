@@ -116,6 +116,8 @@ services:
       <<: *airflow-depends
       airflow-init:
         condition: service_completed_successfully
+      db-migrate:      # the Silver DAG loads into the project database
+        condition: service_completed_successfully
 
   airflow-triggerer:
     <<: *airflow-common
@@ -133,11 +135,10 @@ services:
         condition: service_completed_successfully
 
   # Project database (PostgreSQL + PostGIS). Starts with the rest of the stack
-  # (docker compose up -d); alone: docker compose up -d project-db
-  # On first start (empty volume) it runs every .sql file in sql/ in name order:
-  # 001 = Workshop 1 draft schema, 002 = Silver quality indicators.
-  # From the host (DBeaver, psql): localhost:${POSTGRES_PORT}, db/user/password from .env.
-  # Next steps for the team: docs/database_handoff.md
+  # (docker compose up -d); alone: docker compose up -d project-db db-migrate
+  # The schema comes from sql/*.sql, applied by the db-migrate service below on every start.
+  # From the host (pgAdmin, DBeaver, psql): localhost:${POSTGRES_PORT}, db/user/password from .env.
+  # More: docs/database_handoff.md
   project-db:
     image: postgis/postgis:16-3.4
     environment:
@@ -148,12 +149,31 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - project-db-data:/var/lib/postgresql/data
-      - ./sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       retries: 5
     restart: unless-stopped
+
+  # Applies sql/*.sql that are new or changed since their last run (table schema_migration),
+  # then exits. A new SQL file reaches every clone with the next `docker compose up -d`.
+  db-migrate:
+    image: postgis/postgis:16-3.4
+    entrypoint: ["sh", "/db_migrate.sh"]
+    environment:
+      PGHOST: project-db
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-volcano}
+      PGUSER: ${POSTGRES_USER:-volcano}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      PGOPTIONS: "-c client_min_messages=warning"   # no "already exists, skipping" notices
+    volumes:
+      - ./sql:/sql:ro
+      - ./scripts/db_migrate.sh:/db_migrate.sh:ro
+    depends_on:
+      project-db:
+        condition: service_healthy
+    restart: "no"
 
 volumes:
   airflow-metadata:

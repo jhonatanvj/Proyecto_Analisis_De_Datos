@@ -151,7 +151,7 @@ To reprocess Silver from the Bronze files, pause the DAGs and delete everything 
 
 ### 7. Project database (PostgreSQL + PostGIS)
 
-`docker compose up -d` also starts the `project-db` service. On its first start it creates the schema from `sql/` (`001_schema_draft.sql`, `002_silver_indicators.sql` with the Silver quality flags, lineage columns, the `volcano_update` table and the `silver_quality_indicators` view, and `003_loader_state.sql` with the list of Silver files already loaded).
+`docker compose up -d` also starts the `project-db` service and then `db-migrate`, which applies every `sql/*.sql` that is new or changed (`001` base schema, `002` Silver quality flags, lineage, `volcano_update` and the `silver_quality_indicators` view, `003` list of loaded Silver files, `004` Workshop 3 sources) and records it in `schema_migration`. SQL files must be idempotent; details in [`docs/database_handoff.md`](docs/database_handoff.md).
 
 The last task of the `silver_processing` DAG (`load_to_database`) loads every new Silver file into the database: one transaction per file with the upserts, the `ingestion_run` row and the watermark in `ingestion_state`. To load what is already on disk without Airflow (for example the first time):
 
@@ -176,7 +176,7 @@ The `gold_processing` DAG runs every Monday at 03:00 UTC (or *Trigger DAG* in th
 * Spark tests need Java 8/11/17. On the host they are skipped when Java does not fit; run everything inside the image:
 
 * **After every `git pull` that touches `airflow/Dockerfile` or a requirements file, run `docker compose up -d --build`.** Restarting Docker Desktop brings the old containers back with the old image (seen on 2026-11-19: `load_to_database` failed with `No module named 'psycopg'`).
-* New SQL files (`sql/00N_*.sql`) only run on an empty database volume; on an existing one apply them by hand, e.g. `docker compose exec -T project-db psql -U volcano -d volcano < sql/004_workshop3_sources.sql`.
+* New SQL files (`sql/00N_*.sql`) are applied by the `db-migrate` service on the next `docker compose up -d`; nothing to run by hand.
 
 ```bash
 docker compose up -d --build                                      # after pulling (new Java/PySpark layers)
@@ -213,7 +213,7 @@ docker compose run --rm airflow-scheduler pytest -q               # all tests, S
 ├── docker-compose.yml         # Airflow stack + PostGIS project database
 ├── datalake_bronze/ datalake_silver/ datalake_gold/   # data lake layers (git-ignored)
 ├── data/raw/                  # raw landing zone (git-ignored)
-├── sql/                       # DDL (001 draft, 002 Silver indicators, 003 loader state), loaded by the project-db container
+├── sql/                       # DDL 001-004, applied by the db-migrate service (scripts/db_migrate.sh)
 ├── dashboard/                 # Dash app (Workshop #4)
 ├── tests/ and tests/fixtures/ # pytest + recorded responses
 ├── notebooks/01_source_profiling.ipynb, 02_silver_exploration.ipynb
