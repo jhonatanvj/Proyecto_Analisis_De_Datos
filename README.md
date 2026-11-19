@@ -151,7 +151,7 @@ To reprocess Silver from the Bronze files, pause the DAGs and delete everything 
 
 ### 7. Project database (PostgreSQL + PostGIS)
 
-`docker compose up -d` also starts the `project-db` service and then `db-migrate`, which applies every `sql/*.sql` that is new or changed (`001` base schema, `002` Silver quality flags, lineage, `volcano_update` and the `silver_quality_indicators` view, `003` list of loaded Silver files, `004` Workshop 3 sources) and records it in `schema_migration`. SQL files must be idempotent; details in [`docs/database_handoff.md`](docs/database_handoff.md).
+`docker compose up -d` also starts the `project-db` service and then `db-migrate`, which applies every `sql/*.sql` that is new or changed (`001` base schema, `002` Silver quality flags, lineage, `volcano_update` and the `silver_quality_indicators` view, `003` list of loaded Silver files, `004` Workshop 3 sources, `005` table `volcano_notice` with the HANS notice texts) and records it in `schema_migration`. SQL files must be idempotent; details in [`docs/database_handoff.md`](docs/database_handoff.md).
 
 The last task of the `silver_processing` DAG (`load_to_database`) loads every new Silver file into the database: one transaction per file with the upserts, the `ingestion_run` row and the watermark in `ingestion_state`. To load what is already on disk without Airflow (for example the first time):
 
@@ -213,7 +213,7 @@ docker compose run --rm airflow-scheduler pytest -q               # all tests, S
 ├── docker-compose.yml         # Airflow stack + PostGIS project database
 ├── datalake_bronze/ datalake_silver/ datalake_gold/   # data lake layers (git-ignored)
 ├── data/raw/                  # raw landing zone (git-ignored)
-├── sql/                       # DDL 001-004, applied by the db-migrate service (scripts/db_migrate.sh)
+├── sql/                       # DDL 001-005, applied by the db-migrate service (scripts/db_migrate.sh)
 ├── dashboard/                 # Dash app (Workshop #4)
 ├── tests/ and tests/fixtures/ # pytest + recorded responses
 ├── notebooks/01_source_profiling.ipynb, 02_silver_exploration.ipynb

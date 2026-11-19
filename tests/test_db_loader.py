@@ -94,6 +94,18 @@ def test_watermarks_are_fixed_width_utc_strings_per_source():
     assert loader.watermark_candidates("quarantine", vol, cfg) == {}
 
 
+def test_notices_keep_their_source_and_integer_volcano_lists():
+    df = pd.DataFrame({"record_id": ["usgs_hans_notice:A:DU", "usgs_hans_notice:A:DU", "usgs_hans_notice:B:WU"],
+                       "bronze_file": ["usgs_hans_notices_20261119_171052.json"] * 3,
+                       "sent_time": pd.to_datetime(["2026-11-01", "2026-11-01", "2026-11-02"], utc=True),
+                       "processed_utc": pd.to_datetime(["2026-11-19"] * 3, utc=True),
+                       "vnums": [np.array([332010]), np.array([332010]), np.array([311120, 313020])]})
+    stage = loader.prep_notices(df).stage
+    assert len(stage) == 2 and set(stage["source_id"]) == {"usgs_hans_notices"}
+    assert loader.py_values(stage["vnums"]) == [[332010], [311120, 313020]]
+    assert loader.watermark_candidates("notices", stage, {})["usgs_hans_notices"][1].startswith("2026-11-02")
+
+
 def test_py_values_turn_numpy_and_missing_values_into_python():
     assert loader.py_values(pd.Series([1, None], dtype="Int64")) == [1, None]
     assert loader.py_values(pd.Series([np.array(["ash", "lava"]), None])) == [["ash", "lava"], None]

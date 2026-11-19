@@ -20,6 +20,7 @@ The Workshop 3 document asks for a Gold layer of Parquet files built with PySpar
 | Silver indicators (DDL) | [`sql/002_silver_indicators.sql`](../sql/002_silver_indicators.sql) | Workshop 2: quality flags, lineage, `volcano_update`, view `silver_quality_indicators`, `source` rows. Idempotent |
 | Loader state (DDL) | [`sql/003_loader_state.sql`](../sql/003_loader_state.sql) | Table `silver_load_file` (Silver files already loaded) and two indexes. Idempotent |
 | Workshop 3 sources | [`sql/004_workshop3_sources.sql`](../sql/004_workshop3_sources.sql) | `source` rows for `usgs_hans_notices` and `usgs_hans_volcanoes`. Idempotent |
+| HANS notice texts | [`sql/005_volcano_notice.sql`](../sql/005_volcano_notice.sql) | Table `volcano_notice` (Silver topic `notices`): 16,535 notices 2010-2026 with summary, cleaned text, tokens, alert level, volcano and region. Own table, not a child of `event`, because region-wide notices have no coordinates |
 | Schema migrations | service `db-migrate`, [`scripts/db_migrate.sh`](../scripts/db_migrate.sh) | Applies new or changed `sql/*.sql` on every `docker compose up`; table `schema_migration` |
 | Loader | [`src/volcano_pipeline/storage/loader.py`](../src/volcano_pipeline/storage/loader.py), connection in [`db.py`](../src/volcano_pipeline/storage/db.py) | Silver Parquet → database, see below |
 | ER diagram | [`docs/er_diagram.png`](er_diagram.png) (source `er_diagram.mmd`) | Matches 001; does not show the 002 columns yet |

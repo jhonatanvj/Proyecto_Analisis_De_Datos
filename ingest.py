@@ -138,7 +138,7 @@ SELECT 'volcano', count(*) FROM volcano UNION ALL SELECT 'event', count(*) FROM 
 UNION ALL SELECT 'eruption', count(*) FROM eruption UNION ALL SELECT 'earthquake', count(*) FROM earthquake
 UNION ALL SELECT 'volcano_alert', count(*) FROM volcano_alert UNION ALL SELECT 'volcano_update', count(*) FROM volcano_update
 UNION ALL SELECT 'rejected_record', count(*) FROM rejected_record UNION ALL SELECT 'ingestion_run', count(*) FROM ingestion_run
-UNION ALL SELECT 'event_group', count(*) FROM event_group""")
+UNION ALL SELECT 'event_group', count(*) FROM event_group UNION ALL SELECT 'volcano_notice', count(*) FROM volcano_notice""")
         print("\nRows: " + ", ".join(f"{t} {n:,}" for t, n in cur.fetchall()))
         cur.execute("SELECT count(*) FROM silver_load_file")
         loaded = cur.fetchone()[0]
