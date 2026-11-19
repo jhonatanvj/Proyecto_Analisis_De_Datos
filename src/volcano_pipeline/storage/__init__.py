@@ -1,1 +1,1 @@
-"""Storage layer: raw landing zone now, PostgreSQL/PostGIS repository in Workshop #2."""
+"""Storage layer: raw landing zone, project database connection and the Silver -> PostgreSQL loader."""

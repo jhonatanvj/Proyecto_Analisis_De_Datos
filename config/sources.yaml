@@ -49,6 +49,7 @@ sources:
       Distributed by Smithsonian Institution, compiled by Venzke, E.
       https://doi.org/10.5479/si.GVP.VOTW5-2026.5.4
     schedule: "@monthly"        # re-check for new database versions
+    database_version: "5.4.0"   # update with the citation when GVP publishes a new version
     watermark_field: database_version
     duplicate_key: [Volcano_Number]
 
@@ -72,6 +73,7 @@ sources:
       Global Volcanism Program, 2026. [Database] Volcanoes of the World (v. 5.4.0; 7 Aug 2026).
       https://doi.org/10.5479/si.GVP.VOTW5-2026.5.4
     schedule: "@monthly"
+    database_version: "5.4.0"
     watermark_field: database_version + content_hash
     duplicate_key: [Eruption_Number]
 
@@ -111,6 +113,14 @@ sources:
     schedule: "0 * * * *"
     watermark_field: sent_unixtime
     duplicate_key: [vnum, notice_identifier]
+    # Monitored volcanoes that are not in the GVP Holocene list, so Silver has no coordinates for
+    # them. The loader adds them to the volcano table (is_holocene = false) before their notices.
+    # Approximate summit / caldera centre, WGS84.
+    extra_volcanoes:
+      - {vnum: 311161, name: Korovin, latitude: 52.381, longitude: -174.166, observatory: avo}
+      - {vnum: 323180, name: Coso Volcanic Field, latitude: 36.03, longitude: -117.82, observatory: calvo}
+      - {vnum: 323822, name: Long Valley Caldera, latitude: 37.70, longitude: -118.87, observatory: calvo}
+      - {vnum: 325010, name: Yellowstone, latitude: 44.43, longitude: -110.67, observatory: yvo}
 
   - source_id: usgs_feed
     name: USGS real-time GeoJSON summary feed (all earthquakes, past 7 days)

@@ -38,7 +38,7 @@ None of these sources needs an API key. Full details (URLs, limits, watermarks, 
 | Bronze (raw JSON per source and run) | **running**: `bronze_ingestion` DAG, hourly | `datalake_bronze/<source>_YYYYMMDD_HHMMSS.json` |
 | Historical earthquakes (FDSN, 2010 → today) | **ready**: `bronze_backfill_fdsn` DAG, run by hand once | `datalake_bronze/usgs_fdsn_*.json` → Silver `earthquakes_*` |
 | Silver (clean Parquet per topic + quarantine) | **running**: `silver_processing` DAG, FileSensor-triggered | `datalake_silver/<topic>_YYYYMMDD_HHMMSS.parquet` |
-| Project database (PostgreSQL + PostGIS, canonical model) | **schema ready** (with Silver quality indicators), starts with the stack; loader not written yet ([handoff](docs/database_handoff.md)) | service `project-db`, `sql/` |
+| Project database (PostgreSQL + PostGIS, canonical model) | **loaded** from Silver by the `load_to_database` task of the Silver DAG and by `ingest.py` ([details](docs/database_handoff.md)) | service `project-db`, `sql/`, `src/volcano_pipeline/storage/loader.py` |
 | Gold (governance + analytical summaries, PySpark) | planned (Workshop #3) | `datalake_gold/` |
 | Dashboard (Plotly Dash, `localhost:8050`) | planned (Workshop #4) | `dashboard/` |
 
@@ -150,14 +150,21 @@ To reprocess Silver from the Bronze files, pause the DAGs and delete everything 
 
 ### 7. Project database (PostgreSQL + PostGIS)
 
-`docker compose up -d` also starts the `project-db` service. On its first start it creates the schema from `sql/` (`001_schema_draft.sql`, then `002_silver_indicators.sql` with the Silver quality flags, lineage columns, the `volcano_update` table and the `silver_quality_indicators` view). The tables stay empty until the Silver → database loader is written.
+`docker compose up -d` also starts the `project-db` service. On its first start it creates the schema from `sql/` (`001_schema_draft.sql`, `002_silver_indicators.sql` with the Silver quality flags, lineage columns, the `volcano_update` table and the `silver_quality_indicators` view, and `003_loader_state.sql` with the list of Silver files already loaded).
+
+The last task of the `silver_processing` DAG (`load_to_database`) loads every new Silver file into the database: one transaction per file with the upserts, the `ingestion_run` row and the watermark in `ingestion_state`. To load what is already on disk without Airflow (for example the first time):
+
+```bash
+python ingest.py --mode historical --skip-fetch      # Silver files not in the database yet
+python ingest.py --mode status                       # watermarks, last runs, row counts
+```
 
 ```bash
 docker compose up -d project-db                                   # only the database
 docker compose exec project-db psql -U volcano -d volcano -c "\dt"
 ```
 
-Connect from DBeaver or any SQL client: host `localhost`, port `POSTGRES_PORT` (5432), database `volcano`, user `volcano`, password `POSTGRES_PASSWORD` from `.env`. Step by step, how to apply schema changes and next steps: [`docs/database_handoff.md`](docs/database_handoff.md).
+Connect from pgAdmin, DBeaver or any SQL client: host `localhost`, port `POSTGRES_PORT` (5432, or 5433 if a local PostgreSQL already uses 5432), database `volcano`, user `volcano`, password `POSTGRES_PASSWORD` from `.env`. Step by step, how to apply schema changes and next steps: [`docs/database_handoff.md`](docs/database_handoff.md).
 
 ### Troubleshooting
 
@@ -183,12 +190,12 @@ Connect from DBeaver or any SQL client: host `localhost`, port `POSTGRES_PORT` (
 │   ├── bronze/                # extraction, payload validation, JSON envelope writer
 │   ├── silver/                # schemas, cleaning per topic, text, outliers, dedup state, runner
 │   ├── normalization/         # canonical mapping, geo helpers
-│   └── storage/               # raw landing zone (Workshop #1); database loader goes here
+│   └── storage/               # raw landing zone, database connection and Silver -> PostgreSQL loader
 ├── airflow/                   # Dockerfile, requirements, dags/ (bronze_ingestion, silver_processing, bronze_backfill_fdsn)
 ├── docker-compose.yml         # Airflow stack + PostGIS project database
 ├── datalake_bronze/ datalake_silver/ datalake_gold/   # data lake layers (git-ignored)
 ├── data/raw/                  # raw landing zone (git-ignored)
-├── sql/                       # DDL (001 draft + 002 Silver indicators), loaded by the project-db container
+├── sql/                       # DDL (001 draft, 002 Silver indicators, 003 loader state), loaded by the project-db container
 ├── dashboard/                 # Dash app (Workshop #4)
 ├── tests/ and tests/fixtures/ # pytest + recorded responses
 ├── notebooks/01_source_profiling.ipynb, 02_silver_exploration.ipynb
@@ -220,12 +227,13 @@ pytest -q
 ## CLI contract
 
 ```bash
-python ingest.py --mode historical [--start 2010-01-01 --end 2025-12-31]
-python ingest.py --mode incremental
+python ingest.py --mode historical [--start 2010-01-01 --end 2025-12-31]  # GVP + FDSN -> Bronze -> Silver -> database
+python ingest.py --mode incremental                                        # HANS, feed, Volcano Updates -> ... -> database
 python ingest.py --mode status                                             # watermarks, last runs, row counts
+python ingest.py --mode historical --skip-fetch                            # no API calls: only load pending files
 ```
 
-`ingest.py` is still a stub: it validates arguments and lists the sources. It will load the Silver data into the project database (see [`docs/database_handoff.md`](docs/database_handoff.md)).
+Both loading modes are idempotent: Silver keeps only new or changed records, the loader skips Silver files already listed in `silver_load_file` and rewrites a row only when its content hash changed. Details: [`docs/database_handoff.md`](docs/database_handoff.md).
 
 ## Workshop deliverables
 

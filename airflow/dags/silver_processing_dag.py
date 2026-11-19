@@ -1,4 +1,5 @@
-"""Silver processing: clean the new Bronze files and write Parquet files to datalake_silver/.
+"""Silver processing: clean the new Bronze files, write Parquet files to datalake_silver/ and
+load the new Silver files into the project database (PostgreSQL + PostGIS, service project-db).
 
 A FileSensor watches datalake_bronze/*.json. The plain FileSensor would succeed as soon as any
 Bronze file exists, including files already processed, so NewBronzeFileSensor also checks the
@@ -8,6 +9,11 @@ Timing: Bronze runs at minute 0 of every hour; this DAG starts at minute 15 and 
 60 s for up to 40 min (mode=reschedule frees the worker slot between pokes). If no new file
 shows up the run ends as skipped (soft_fail), not failed, because "nothing new this hour" is a
 normal outcome when the sources did not change.
+
+load_to_database loads every Silver file not yet in the database (see
+volcano_pipeline/storage/loader.py): one transaction per file, upserts by content hash, run log
+and watermark in the same transaction. If the database is down the task fails and retries; the
+files stay pending and the next run loads them.
 """
 from __future__ import annotations
 
@@ -21,6 +27,7 @@ from airflow.sensors.filesystem import FileSensor
 
 from volcano_pipeline.config import datalake_dir, load_config
 from volcano_pipeline.silver.run import process_bronze_files, unprocessed_files
+from volcano_pipeline.storage.loader import load_pending
 
 log = logging.getLogger("silver_processing")
 
@@ -66,7 +73,15 @@ def silver_processing():
         log.info(json.dumps({"event": "silver_summary", **summary}, default=str))
         return {k: v for k, v in summary.items() if k != "processed"} | {"files": len(summary["processed"])}
 
-    wait_for_bronze >> process()
+    @task(retries=3, retry_delay=timedelta(minutes=5))
+    def load_to_database() -> dict:
+        summary = load_pending(datalake_dir("silver"), load_config(), mode="incremental")
+        if summary["failed"]:
+            raise RuntimeError(f"database load failed on {summary['failed']['file']}: {summary['failed']['error']}")
+        return {"files": len(summary["loaded"]),
+                **{k: sum(r.get(k, 0) for r in summary["loaded"]) for k in ("rows_in", "new", "updated", "rejected")}}
+
+    wait_for_bronze >> process() >> load_to_database()
 
 
 silver_processing()

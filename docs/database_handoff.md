@@ -1,6 +1,6 @@
-# Project database: current state and next steps
+# Project database: how it is loaded and what is left
 
-Status on 2026-11-16: **schema ready, not loaded yet**. The `project-db` container starts with the rest of the stack and creates the schema with the Silver quality indicators. The pipeline (Bronze JSON → Silver Parquet) does not write to the database yet. This note is for the team members who will build the database layer.
+Status on 2026-11-19: **loaded**. The `project-db` container starts with the rest of the stack and creates the schema. The Silver DAG loads every new Silver file into it (task `load_to_database`), and `ingest.py` does the same from the command line. First full load: 169 volcanoes, 1,281 eruptions, 291,439 earthquakes, 54 HANS notices, 9 Volcano Updates and 2,019 rejected records, in about 90 s.
 
 ## Why we need it
 
@@ -18,13 +18,15 @@ The Workshop 3 document asks for a Gold layer of Parquet files built with PySpar
 |---|---|---|
 | Base schema (DDL) | [`sql/001_schema_draft.sql`](../sql/001_schema_draft.sql) | Workshop 1: 12 tables + view `volcano_current_alert` |
 | Silver indicators (DDL) | [`sql/002_silver_indicators.sql`](../sql/002_silver_indicators.sql) | Workshop 2: quality flags, lineage, `volcano_update`, view `silver_quality_indicators`, `source` rows. Idempotent |
+| Loader state (DDL) | [`sql/003_loader_state.sql`](../sql/003_loader_state.sql) | Table `silver_load_file` (Silver files already loaded) and two indexes. Idempotent |
+| Loader | [`src/volcano_pipeline/storage/loader.py`](../src/volcano_pipeline/storage/loader.py), connection in [`db.py`](../src/volcano_pipeline/storage/db.py) | Silver Parquet → database, see below |
 | ER diagram | [`docs/er_diagram.png`](er_diagram.png) (source `er_diagram.mmd`) | Matches 001; does not show the 002 columns yet |
 | Mapping source field → table/column | [`workshop_1/mapping.md`](../workshop_1/mapping.md), [`mapping.csv`](../workshop_1/mapping.csv) | Workshop 1 |
 | Ingestion contract (upserts, watermarks, retries) | [`workshop_1/ingestion_contract.md`](../workshop_1/ingestion_contract.md) | Workshop 1 |
 | PostGIS container | service `project-db` in [`docker-compose.yml`](../docker-compose.yml) | Starts with `docker compose up -d`; runs every `.sql` in `sql/` (name order) on first start |
-| Connection settings | `POSTGRES_*` in `.env` (copy of `.env.example`) | Host `localhost`, port 5432, db/user `volcano` |
+| Connection settings | `POSTGRES_*` in `.env` (copy of `.env.example`) | Host `localhost`, port 5432 (5433 if a local PostgreSQL uses 5432), db/user `volcano`. Airflow uses `project-db:5432` (set in `docker-compose.yml`) |
 | Clean data to load | `datalake_silver/<topic>_*.parquet` (topics `volcanoes`, `eruptions`, `earthquakes`, `alert_notices`, `volcano_updates`) and `datalake_silver/quarantine/` | Running every hour |
-| CLI | [`ingest.py`](../ingest.py) | Stub: parses arguments, `--mode status` lists sources only |
+| CLI | [`ingest.py`](../ingest.py) | `historical` / `incremental`: Bronze → Silver → database; `--skip-fetch` only loads pending files; `status`: watermarks, last runs, row counts |
 
 ## Start the database
 
@@ -42,6 +44,14 @@ If it does not start:
 | `port is already allocated` / `address already in use` on 5432 | A local PostgreSQL (or another container) uses 5432. Set `POSTGRES_PORT=5433` in `.env`, `docker compose up -d project-db`, and use 5433 in DBeaver |
 | DBeaver: `password authentication failed` | The password was fixed when the volume was created. If `.env` changed afterwards, reset the volume (below) |
 | Tables are missing / old columns | The `.sql` files only run on an **empty** volume. Apply `002` by hand or reset the volume (below) |
+
+## Connect with pgAdmin
+
+1. *Servers → Register → Server…*; *General* tab: Name `Volcano (Docker)`.
+2. *Connection* tab: Host `localhost`, Port `POSTGRES_PORT` from `.env`, Maintenance database `volcano`, Username `volcano`, Password = `POSTGRES_PASSWORD` from `.env`, tick *Save password* → *Save*.
+3. `volcano → Schemas → public → Tables` (right click → *View/Edit Data*), or *Tools → Query Tool* for SQL. The `geom` columns open on a map with the *Geometry Viewer* (eye icon in the result grid).
+
+If pgAdmin was installed together with a local PostgreSQL, that server already uses port 5432: set `POSTGRES_PORT=5433` in `.env` before the first `docker compose up -d project-db`.
 
 ## Connect with DBeaver
 
@@ -88,27 +98,37 @@ docker compose up -d project-db
 
 View `silver_quality_indicators`: one row per (table, indicator) with `flagged`, `total`, `pct_flagged`, plus the quarantine count per reason.
 
-Tested on 2026-11-16: the Silver samples in `workshop_2/samples/` (229 earthquakes, 1,281 eruptions, 54 notices, 9 updates, 146 rejects) load into this schema inside a transaction without errors. Results of that test, useful for the loader:
+## How the loader works
 
-* `event.latitude/longitude` are `NOT NULL`. 4 HANS notices have `coords_missing = true` and belong to volcanoes that are not in the GVP list (e.g. Yellowstone 325010). The loader must first insert those volcanoes from HANS (`is_holocene = false`, coordinates from `getUSVolcanoes`) and copy their coordinates into `event`.
-* Eruptions of non-US volcanoes must be skipped (FK to `volcano`).
-* 6 of 9 `volcano_update` rows have no `vnum` (the "elevated" list only has the name). Link them by name to `volcano.name` on load or leave `volcano_number` NULL.
-* `rejected_record.payload` is a JSON string in Parquet: cast with `::jsonb`.
-* `volcano_alert.color_code` only accepts GREEN/YELLOW/ORANGE/RED (the only values seen in HANS so far). If HANS ever sends another value, the insert fails: map unknown values to NULL in the loader.
+Entry points: the `load_to_database` task of the `silver_processing` DAG (mode `incremental`) and `python ingest.py --mode historical|incremental` (add `--skip-fetch` to only load files already on disk).
 
-## Gaps still open
+* Silver files are loaded oldest first; for the same timestamp `volcanoes` goes first, then `eruptions`, `earthquakes`, `alert_notices`, `volcano_updates` and the quarantine file.
+* **One transaction per Silver file**: staging with `COPY` → upsert into `event` + domain table → `ingestion_run` (one row per source in the file, with rows in / new / updated / rejected) → `ingestion_state.watermark` → row in `silver_load_file`. A crash rolls back everything for that file, a `failed` run with the error is recorded and the loader stops; the next call retries the same file.
+* **Idempotency**: a file listed in `silver_load_file` is never loaded again, and an existing row is rewritten only when its `content_hash` changed (`ON CONFLICT ... WHERE content_hash IS DISTINCT FROM ...`). Loading the same records again under a new file name gives 0 new / 0 updated.
+* An advisory lock lets only one loader run at a time (Airflow task and `ingest.py` at the same time are safe).
+* `event.source_id` comes from the Bronze file name of each row (`usgs_fdsn` or `usgs_feed` for earthquakes).
+* Watermarks: `usgs_feed` / `usgs_fdsn` = latest USGS `updated`, `usgs_hans` = latest `sent_time`, `usgs_volcano_updates` = latest `as_of_time` (fixed-width UTC strings, they only move forward), GVP = `database_version` from `config/sources.yaml`.
 
-* The `eruption` table stores `start_year/month/day`; Silver has `start_time` + `time_precision` → use `event.event_time` and `event.time_precision`.
-* FDSN (historical earthquakes since 2010) is loaded into Bronze by the manual DAG `bronze_backfill_fdsn` (or `scripts/run_pipeline_local.py --fdsn-backfill`) and ends in the Silver `earthquakes` topic like the feed. `--mode historical` can trigger that backfill and then load Silver into the database. The daily catch-up of revised events (`updatedafter=<watermark>`) is still to do (Workshop 3).
-* The ER diagram should be regenerated with the 002 columns and `volcano_update`.
+Cases found when the Silver samples were first loaded by hand (2026-11-16) and how the loader handles them:
 
-## Suggested next steps
+* HANS volcanoes that are not in the GVP list (Korovin, Coso, Long Valley, Yellowstone) are inserted from `usgs_hans.extra_volcanoes` in `config/sources.yaml` (`is_holocene = false`); their notices take the coordinates from there. A notice for any other unknown volcano goes to `rejected_record` with reason `volcano_not_in_catalog`, as do eruptions of volcanoes outside the catalogue.
+* `volcano_update.volcano_number`: Silver `vnum` when known, otherwise an exact case-insensitive name match (only if the name is unique). 6 of 9 records are linked.
+* `color_code` values outside GREEN/YELLOW/ORANGE/RED are stored as NULL.
+* Quarantine payloads that are not JSON are stored as a JSON string.
+* Eruptions: `start_month` / `start_day` are filled from `start_time` according to `time_precision`; BCE eruptions keep `event_time = NULL` and `time_precision = 'bce'`.
+* `volcano_earthquake` gets one link per earthquake: the nearest volcano within the radius (Silver `nearest_vnum`).
 
-1. Add `psycopg[binary]` and `SQLAlchemy` (already listed, commented, in `requirements.txt`) to `requirements.txt` and `airflow/requirements.txt`.
-2. Write a loader `src/volcano_pipeline/storage/db.py`:
-   - read Silver topic files not yet loaded;
-   - upsert into `event` + the domain table with `INSERT ... ON CONFLICT (event_id) DO UPDATE ... WHERE content_hash <> EXCLUDED.content_hash`, copying the indicator and lineage columns 1:1;
-   - write one `ingestion_run` row per run and source;
-   - advance `ingestion_state.watermark` in the same transaction.
-3. Call it from `ingest.py` (`--mode historical`, `--mode incremental`, `--mode status`) and as a last task in the Silver DAG. For the DAG, add `POSTGRES_HOST=project-db` to the Airflow environment (inside the Docker network the host is the service name, not `localhost`).
-4. Tests with pytest. Use a recorded Silver Parquet as fixture. For SQL, either a disposable PostGIS container or keep the SQL in small functions that can be tested without a database.
+Tests: [`tests/test_db_loader.py`](../tests/test_db_loader.py) checks the row preparation on the recorded Silver samples, without a database. The end-to-end test (load twice, no duplicates) runs only when `VOLCANO_TEST_DSN` points to a disposable database with `sql/001-003` applied:
+
+```bash
+docker compose exec project-db psql -U volcano -d volcano -c "CREATE DATABASE volcano_test"
+for f in sql/00*.sql; do docker compose exec -T project-db psql -q -U volcano -d volcano_test < $f; done
+VOLCANO_TEST_DSN="host=localhost port=5433 dbname=volcano_test user=volcano password=..." pytest tests/test_db_loader.py
+```
+
+## Still open
+
+* `volcano_earthquake` only stores the nearest volcano; all volcanoes within the radius (many-to-many) need a PostGIS query (`ST_DWithin`) after the load.
+* `event_group` (cross-source matching) is empty: Workshop 3.
+* `--mode incremental` still downloads the full 7-day feed; using the watermark in the FDSN query (`updatedafter=<watermark>`) is Workshop 3.
+* The ER diagram should be regenerated with the 002/003 columns, `volcano_update` and `silver_load_file`.

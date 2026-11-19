@@ -22,6 +22,9 @@ x-airflow-common: &airflow-common
     PYTHONPATH: /opt/airflow/src
     DATALAKE_ROOT: /opt/airflow
     SOURCES_CONFIG: /opt/airflow/config/sources.yaml
+    # project database seen from inside the Docker network (overrides localhost/POSTGRES_PORT from .env)
+    POSTGRES_HOST: project-db
+    POSTGRES_PORT: "5432"
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
