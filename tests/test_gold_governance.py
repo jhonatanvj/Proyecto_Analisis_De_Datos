@@ -178,6 +178,14 @@ def test_freshness_and_ingestion_frequency_from_the_lineage(spark):
     assert age["usgs_hans"] > age["usgs_feed"] > 0
 
 
+def test_generated_utc_is_the_run_time_in_utc_whatever_the_host_time_zone(spark):
+    from volcano_pipeline.gold.contract import conform
+
+    df = conform(spark.createDataFrame([("s", "m", 1.0)], "section string, metric string, value double"), WHEN)
+    # formatted inside Spark (session time zone UTC): 03:00 UTC, not shifted by the host offset
+    assert df.selectExpr("date_format(generated_utc, 'yyyy-MM-dd HH:mm') AS t").first()["t"] == "2026-11-23 03:00"
+
+
 def test_build_governance_on_the_silver_samples_has_every_section(spark, silver_dir):
     from volcano_pipeline.gold.governance import build_governance
     from volcano_pipeline.gold.silver_reader import read_silver
