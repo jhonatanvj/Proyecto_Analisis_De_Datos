@@ -24,6 +24,17 @@ def read_topic(spark, silver_dir: Path, topic: str):
     return spark.read.parquet(str(folder))
 
 
+def latest(df):
+    """Keep the newest version of each record. Silver writes a record again when it changes at the
+    source (a revised magnitude, the feed repeating its week), so a topic folder can hold several
+    versions of one record_id; count records only after this."""
+    from pyspark.sql import Window
+    from pyspark.sql import functions as F
+
+    w = Window.partitionBy("record_id").orderBy(F.col("processed_utc").desc())
+    return df.withColumn("_rn", F.row_number().over(w)).where("_rn = 1").drop("_rn")
+
+
 def read_silver(spark, silver_dir: Path) -> dict:
     """{topic: DataFrame or None} for the five topics and the quarantine."""
     return {t: read_topic(spark, silver_dir, t) for t in TOPICS + ["quarantine"]}

@@ -202,6 +202,15 @@ def test_text_features_are_filled():
     assert df.loc[df["notice_type"] == "DU", "kw_lava"].all()
 
 
+def test_reference_volcano_list_is_processed_without_quarantine(tmp_path):
+    from volcano_pipeline.silver.run import process_bronze_files
+
+    bronze = tmp_path / "bronze"
+    write_bronze(build_envelope("usgs_hans_volcanoes", "u", {}, 200, b"v", US_VOLCANOES, NOW), bronze)
+    out = process_bronze_files(bronze, tmp_path / "silver", when=NOW)
+    assert out["rejected"] == 0 and out["written"] == {} and len(out["processed"]) == 1
+
+
 def test_notice_without_time_goes_to_quarantine():
     broken = dict(NOTICES[0], sentUnixtime=None)
     _, df, rejects = _silver([broken])

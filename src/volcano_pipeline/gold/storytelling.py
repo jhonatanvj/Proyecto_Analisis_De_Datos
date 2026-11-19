@@ -19,8 +19,9 @@ def earthquakes_weekly(spark, silver: dict):
     eq = silver.get("earthquakes")
     if eq is None:
         return None
-    latest = eq.dropDuplicates(["record_id"])   # the feed repeats records within its 7-day window
-    return (latest.where(F.col("nearest_vnum").isNotNull())
+    from .silver_reader import latest
+
+    return (latest(eq).where(F.col("nearest_vnum").isNotNull())
             .groupBy(F.date_trunc("week", "event_time").alias("period"))
             .agg(F.count("*").cast("double").alias("value"))
             .select(F.lit("earthquakes_weekly").alias("section"), F.lit("earthquakes").alias("metric"),

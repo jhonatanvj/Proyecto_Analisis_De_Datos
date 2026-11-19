@@ -25,6 +25,8 @@ from .transform import TRANSFORMS, build_context, hans_volcano_map
 
 log = logging.getLogger(__name__)
 
+# Bronze sources that only feed the transform context (lookups), never a Silver topic
+REFERENCE_SOURCES = {"usgs_hans_volcanoes"}
 BRONZE_NAME = re.compile(r"^(?P<source>[a-z0-9_]+?)_(?P<ts>\d{8}_\d{6})\.json$")
 
 
@@ -127,6 +129,8 @@ def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] |
             rejects.append({"source_id": None, "reason": "unreadable_bronze",
                             "payload": raw[:2000].decode("utf-8", "replace"), "bronze_file": path.name})
             continue
+        if source_id in REFERENCE_SOURCES:
+            continue        # read through _context(), not a Silver topic: processed, nothing to write
         transform = TRANSFORMS.get(source_id)
         if transform is None:
             rejects.append({"source_id": source_id, "reason": "unknown_source",

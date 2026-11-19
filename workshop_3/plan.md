@@ -54,7 +54,7 @@ Part 1 goes first because the other two depend on it. Parts 2 and 3 have the sam
 5. CourseProject items: FDSN incremental watermark (`updatedafter`) and `event_group` matching rules.
 6. Report sections: *Pipeline Improvements* (before/after) and *PySpark Implementation*.
 
-Hand-off to Parts 2 and 3: a working Gold DAG that writes two (empty-but-valid) Parquet files, sample Silver data in the new layout and a short "how to add an aggregation" note.
+Hand-off to Parts 2 and 3 (**done 2026-11-19**): a working Gold DAG that writes both Parquet files with one example metric each, and the guide [`handoff_parts_2_3.md`](handoff_parts_2_3.md) (setup, Silver columns and counts, how to add and test a metric, findings to start from).
 
 ### Part 2 — Data governance (Julián Pulido)
 

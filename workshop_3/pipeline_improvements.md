@@ -16,11 +16,15 @@ Source text for the report sections *Pipeline Improvements* and *PySpark Impleme
 | 6 | Incremental sources with no new data would write empty Bronze files every hour. | `write_bronze` skips empty windows for `usgs_hans_notices` and `usgs_fdsn`. | Bronze only grows when something changed. |
 | 7 | Workshop 2 stopped at Silver; the project database was a draft. | Silver → PostgreSQL loader: one transaction per Silver file (upserts by content hash, `ingestion_run`, `ingestion_state.watermark`, `silver_load_file`). | First load: 292,774 events in about 90 s; a second run loads nothing. |
 | 8 | `event_group` was empty. A first matching query (self-join of all earthquakes on time and distance) ran for more than 5 minutes and was cancelled. | Two rules in `storage/event_groups.py`, parameters in `config/sources.yaml`: (a) *same quake, different network*: within 16 s, 10 km and 0.5 magnitude units, comparing each event with its next 3 in time through a window function; (b) *volcano week*: alert notices, eruptions and the earthquakes near that volcano in the same ISO week. | 11 s instead of minutes. Of 6,702 earthquake pairs within 16 s and 10 km, only 163 came from different networks; the other 6,539 are swarm events from one network, not copies, so the rule requires two networks. Result: 124 duplicate pairs (e.g. `hv61684461` / `us10008fuh`: same time, same place, M3.23 vs 3.2) and 948 volcano-week episodes (largest: Kilauea, week 37 of 2024, the September 2024 eruption with 396 nearby earthquakes). |
+| 9 | The Postgres image runs `sql/` only when its volume is empty, so every new SQL file had to be applied by hand in each clone (003 and 004 were). | `db-migrate` service: on every `docker compose up` it applies each `sql/*.sql` that is new or changed (SHA-256 in table `schema_migration`), one transaction per file; `001` was made idempotent like the others, and the Airflow scheduler waits for it. | Tested on the existing database (4 files applied, data kept), on a second run (0 applied), on an empty database (full schema) and after editing three files (re-applied). `005` reached the database with no manual step. |
+| 10 | The notice corpus only existed in Silver and Gold; the final dashboard must read from the database. | `sql/005_volcano_notice.sql` (own table: 985 region-wide notices have no volcano and no coordinates, which `event` requires) and the loader topic `notices`. | 16,535 notices loaded in 47 s, 14,650 linked to a catalogue volcano; a second run loads nothing. New hourly notices follow the same path automatically. |
 
 Things that did not work, and why:
 
 * `obsAbbr: "all"`, the value shown in the HANS documentation, returns 0 notices; an empty string returns all of them (16,539 since 2010).
-* The documented example notice endpoint `notice/getNoticesByVolcano` does not exist; the history is only reachable through the search API.
+* Guessed endpoint names such as `notice/getNoticesByVolcano` do not exist, and the documented notice endpoints only cover recent notices (`getRecentNotices`: the last month, 84 notices on 2026-11-19). The archive is only reachable through the search API.
+* The HANS volcano list (`usgs_hans_volcanoes`) only feeds the transform context, but the Silver runner had no transform for it and quarantined its first Bronze file as `unknown_source`. Reference sources are now marked processed without a reject (one false row remains in the quarantine of 2026-11-19).
+* Restarting Docker Desktop (to apply the new memory limit) brought the Airflow containers back with the image built before PySpark and psycopg were added; `load_to_database` failed with `No module named 'psycopg'` and kept retrying, which looked like a very slow Silver DAG. `docker compose up -d --build` recreates them; the README now says so.
 * Spark 3.5 does not run on the Java 25 installed on one team laptop. Spark runs inside the Airflow image (Java 17), and the Spark tests skip themselves on a host without a supported Java.
 * Docker Desktop had 3.7 GB of memory, not enough for Airflow plus a Spark driver; it was raised to 5 GB through `.wslconfig` (the laptop has 7.3 GB).
 
@@ -43,3 +47,11 @@ Things that did not work, and why:
 **DAG** `gold_processing` (weekly, Monday 03:00 UTC): `check_silver` (skips when Silver is empty) → `build_governance` → `build_storytelling`. The two builders run one after the other, each with its own SparkSession, so two JVMs never share the container memory. Full run on the real data (~292k earthquakes): about 4.5 minutes.
 
 **Output contract** (`gold/contract.py`): both summaries are one long table `section, metric, dimension, period, value, unit, generated_utc`. Builders return any DataFrame with `section, metric, value`; `conform()` adds the optional columns, casts the types and stamps the run time. The file is written with `coalesce(1)` to a temporary folder and its single part file is renamed to `datalake_gold/<kind>_YYYYMMDD_HHMMSS.parquet`, which pandas reads directly in Workshop 4.
+
+## 3. Evidence of successful runs
+
+| Figure | Shows |
+|---|---|
+| [`figures/airflow_gold_processing.png`](figures/airflow_gold_processing.png) | `gold_processing` run of 2026-11-19 16:36 UTC: `check_silver`, `build_governance` and `build_storytelling` succeeded, 2 min 56 s on the full Silver data. |
+| [`figures/airflow_backfill_hans_notices.png`](figures/airflow_backfill_hans_notices.png) | `bronze_backfill_hans_notices` run of 17:56 UTC: 7 s, because every month since 2010 was already loaded (the archive itself was first loaded with the same `run_backfill` function from the host). |
+| [`figures/pgadmin_volcano_notice.png`](figures/pgadmin_volcano_notice.png) | `volcano_notice` in pgAdmin: 16,535 rows, key `usgs_hans_notice:<id>:<type>`. |
