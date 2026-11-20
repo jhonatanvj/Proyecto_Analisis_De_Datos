@@ -12,3 +12,4 @@ psycopg[binary]
 pyspark
 # lets the Spark tests run inside the image: docker compose run --rm airflow-scheduler python -m pytest -q
 pytest
+vaderSentiment>=3.3.2
