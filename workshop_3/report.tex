@@ -1,0 +1,386 @@
+%  Workshop No. 3 - Silver-to-Gold Pipeline, Governance KPIs, and Storytelling Definition
+%  Volcanic Activity Monitoring System (United States), Team 6
+%
+%  Build: pdflatex report.tex (twice).
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\usepackage[a4paper,margin=2.3cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{amsmath}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tabularx}
+
+\graphicspath{{figures/}{./}{../docs/}}
+
+\hypersetup{
+  pdftitle={Workshop 3 - Volcanic Activity Monitoring: Silver-to-Gold Pipeline, Governance KPIs, and Storytelling},
+  pdfauthor={Team 6 - Universidad Distrital Francisco Jose de Caldas},
+  pdfsubject={Data Analysis Programming 2026-II, Workshop No. 3}
+}
+
+\captionsetup{font=small,labelfont=bf}
+\setlist[itemize]{itemsep=2pt,topsep=3pt}
+\setlist[enumerate]{itemsep=2pt,topsep=3pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Workshop 3 --- Silver-to-Gold Pipeline, Governance \& Storytelling}
+\rhead{\small Team 6}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\lstdefinestyle{evidence}{
+  basicstyle=\scriptsize\ttfamily, breaklines=true, columns=flexible,
+  frame=single, framesep=4pt, rulecolor=\color{gray!50}, backgroundcolor=\color{gray!5}
+}
+\lstset{style=evidence}
+
+% Finds images in figures/ or root folder; renders a placeholder only if missing
+\newcommand{\shot}[3]{%
+  \begin{figure}[htbp]\centering
+  \IfFileExists{figures/#1}{\includegraphics[width=#2\linewidth]{figures/#1}}{%
+    \IfFileExists{#1}{\includegraphics[width=#2\linewidth]{#1}}{%
+      \fbox{\parbox[c][3.2cm][c]{0.85\linewidth}{\centering\small Image pending: \texttt{\detokenize{#1}}}}}}
+  \caption{#3}\label{fig:#1}
+  \end{figure}}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\large Universidad Distrital Francisco José de Caldas\\ School of Engineering --- Computer Engineering\par}
+\vspace{1.2cm}
+{\Large Data Analysis Programming 2026-II\par}
+\vspace{1.5cm}
+{\huge\bfseries Workshop No.~3\\[4pt] Silver-to-Gold Pipeline, Governance KPIs,\\ and Storytelling Definition\par}
+\vspace{0.8cm}
+{\Large Volcanic Activity Monitoring System (United States)\par}
+\vspace{1.5cm}
+{\large Team 6\par}
+\vspace{0.4cm}
+\begin{tabular}{ll}
+20231020006 & Juan Sebastián Rangel Pinto\\
+20231020055 & Jhonatan David Vergara Jiménez\\
+20231020064 & Julián David Pulido Carreño\\
+\end{tabular}
+\vfill
+{\large Professor: Eng. Carlos Andrés Sierra, M.Sc.\par}
+\vspace{0.3cm}
+{\large November 2026\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ============================================================================
+\section{Executive summary}
+% ============================================================================
+
+In Workshop~2 we built an Airflow-orchestrated Bronze-to-Silver Medallion pipeline covering six U.S. volcanic and seismic sources. In Workshop~3 we iterate on that pipeline based on empirical findings from full historical runs, expand the textual and seismic archives, and implement the analytical \textbf{Gold layer} in PySpark:
+
+\begin{itemize}
+  \item \textbf{Bronze and Silver Pipeline Improvements.} Silver storage was partitioned into one directory per topic (\texttt{datalake\_silver/<topic>/}) so PySpark can read homogeneous schemas cleanly. We added a full archive backfill and hourly watermark polling for the USGS Hazard Notification System (\texttt{usgs\_hans\_notices}, 16,537 notices from 2010 to 2026), switched FDSN earthquake ingestion to incremental regional watermarks (\texttt{updatedafter}), refined domain stop-word and boilerplate stripping (reducing missing notice summaries from $96.1\%$ to $0.2\%$), automated SQL schema migrations (\texttt{db-migrate}), and loaded all Silver topics into PostgreSQL.
+  \item \textbf{PySpark Gold Layer.} Java~17 and PySpark~3.5.4 were integrated into the Airflow Docker image. A scheduled weekly DAG (\texttt{gold\_processing}) executes two sequential Spark builders in \texttt{local[*]} mode, writing two long-contract Parquet tables to \texttt{datalake\_gold/} that serve as the sole data source for the Workshop~4 Plotly Dash dashboards.
+  \item \textbf{Data Quality Findings and Governance KPIs.} Auditing the Silver layer in \texttt{notebooks/ 03\_data\_quality\_findings.ipynb} documented 24 concrete quality findings (\texttt{F01--F24}), including $37.5\%$ missing VEI in GVP eruptions, $9.4\%$ per-volcano depth outliers, $19.8\%$ pre-deduplication overlap in FDSN radial queries, and $0.095\%$ exact earthquake copies caused by a state hash bug. Six DAMA-DMBOK quality KPIs and three operational metrics were implemented in PySpark (\texttt{governan- ce.py}).
+  \item \textbf{Storytelling Definition and Activity Tone.} Rather than applying social-media sentiment blindly to geophysical bulletins, we built a domain-weighted volcanological activity tone scorer (\texttt{tone.py}) and benchmarked it against VADER across all 16,537 historical notices. Six PySpark storytelling aggregations (\texttt{storytelling.py}, 6,041 rows) map directly to our Workshop~1 user stories (\texttt{US1--US6}).
+  \item \textbf{Verification.} All 124 unit tests pass (\texttt{pytest -q}), exploratory notebooks (\texttt{03\_data\_quality\_ findings.ipynb} and \texttt{04\_gold\_preview.ipynb}) validate the outputs, and Gold Parquet samples are versioned under \texttt{workshop\_3/samples/}.
+\end{itemize}
+
+\vspace{6pt}
+Repository: \url{https://github.com/jhonatanvj/Proyecto_Analisis_De_Datos}
+
+% ============================================================================
+\section{Pipeline improvements (before / after)}\label{sec:improvements}
+% ============================================================================
+
+Running the Workshop~2 pipeline on full historical backfills exposed ten structural, reliability, and NLP bottlenecks. Table~\ref{tab:before_after} summarizes each observation, the engineering change applied, and its measured effect.
+
+\begin{longtable}{L{0.5cm}L{4.4cm}L{4.8cm}L{4.6cm}}
+\caption{Empirical pipeline improvements from Workshop~2 to Workshop~3 (measured on 2026-11-19 runs).}\label{tab:before_after}\\
+\toprule
+\textbf{\#} & \textbf{Observed in Workshop~2} & \textbf{Change applied} & \textbf{Measured effect}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{\#} & \textbf{Observed in Workshop~2} & \textbf{Change applied} & \textbf{Measured effect}\\
+\midrule
+\endhead
+1 & All Silver Parquet files lived in one flat folder; \texttt{spark.read.parquet ("datalake\_silver/")} mixed 5 incompatible schemas and \texttt{\_state/} files. & Partitioned Silver into \texttt{datalake\_silver/<topic>/} (plus \texttt{quarantine/}); added \texttt{scripts/migrate\_silver\_ layout.py}. & Each topic loads as a single homogeneous DataFrame; file-name keying prevented duplicate DB loads (12 moved, 0 reloaded).\\
+2 & Text corpus had only 9--12 scraped \emph{Volcano Updates} records---too small for trend or keyword analysis. & Added \texttt{usgs\_hans\_notices} client (\texttt{POST search/search}), historical backfill since 2010, and hourly watermark polling. & 203 monthly Bronze files; 16,537 notices in Silver (2010-01 to 2026-11) across 6 observatories and 8 notice types.\\
+3 & Notice bodies were dominated by repeated footers, contact e-mails, links, and fixed \emph{Background}/\emph{Definitions} blocks. & Stripped footers, headers, URLs, and boilerplate sections; extracted \texttt{summary\_clean} across all historical label variants; added \texttt{config/stopwords\_ domain.txt} and normalized Hawaiian \texttt{okina} and diacritics. & Missing summaries dropped from $96.1\%$ to $0.2\%$; mean body length fell $27\%$ ($3,800 \to 2,781$ chars); top tokens shifted to genuine volcanic terms.\\
+4 & 706--708 VAN and VONA notices shared a \texttt{notice\_identifier} and were falsely dropped as duplicates. & Changed deduplication key to \texttt{usgs\_hans\_notice:<id>: <type>} in \texttt{config/sources.yaml}. & Recovered all valid VAN/VONA pairs ($15,829 \to 16,535+$ rows) while still filtering exact copies.\\
+5 & FDSN earthquake ingestion required 165+ per-volcano radial queries and missed later magnitude revisions. & Switched to incremental \texttt{updatedafter=<watermark>} over 6 regional bounding boxes (with 60-min overlap). & 6 requests in 3.4~s captured 2,622 new/revised events per week, including historical 2018--2019 revisions.\\
+6 & HANS search returned HTTP~200 with non-JSON HTML during month 2019-12, aborting the backfill. & Extended retry logic to validate JSON bodies, retry \texttt{POST} with exponential backoff (5, 10, 20~s), and checkpoint completed months. & Backfill resumed cleanly from 2019-12 without re-downloading 119 prior months.\\
+7 & Hourly runs with zero changes still wrote empty Bronze files. & Updated \texttt{write\_bronze} to skip empty incremental windows. & Bronze grows only when new or revised records arrive.\\
+8 & \texttt{event\_group} was empty; a naive self-join timed out after $>5$~min. & Implemented windowed cross-network matching ($\le 16$~s, $\le 10$~km, $\Delta M \le 0.5$) and volcano-week episode grouping (\texttt{storage/event\_groups.py}). & Runs in 11~s; identified 124 cross-network duplicate pairs and 948 volcano-week episodes (peak: Kīlauea W37-2024 with 396 quakes).\\
+9 & New SQL migrations required manual execution per clone. & Added \texttt{db-migrate} service tracking SHA-256 hashes in \texttt{schema\_migration}. & Idempotent schema upgrades run automatically on \texttt{docker compose up}.\\
+10 & Notice corpus existed only in Parquet, unavailable to SQL queries. & Created \texttt{volcano\_notice} table (\texttt{sql/005\_volcano\_notice .sql}) and extended the Silver$\to$PostgreSQL loader. & Loaded 16,535 notices in 47~s (14,650 linked to a catalogue \texttt{vnum}; 985 region-wide preserved).\\
+\bottomrule
+\end{longtable}
+
+\subsection{Experimentation lessons (what did not work and why)}
+Following an experimental engineering approach, several dead ends were documented and resolved:
+\begin{itemize}
+  \item \textbf{HANS API parameters and endpoints:} Passing \texttt{obsAbbr="all"} (as shown in USGS documentation) returned zero records; passing an empty string returned the full 16,539-notice archive. Similarly, undocumented guesses such as \texttt{getNoticesByVolcano} do not exist, and \texttt{getRecentNotices} covers only the trailing 30 days (84 notices), confirming that \texttt{POST search/search} is the only route to the full archive.
+  \item \textbf{Reference file quarantine bug:} The HANS volcano catalogue (\texttt{usgs\_hans\_volcanoes}) feeds transform context rather than a Silver table; initially, the Silver runner rejected its Bronze file as \texttt{unknown\_source} (1 false quarantine row on 2026-11-19), which was fixed by marking reference files processed without rejection.
+  \item \textbf{Container memory and Java compatibility:} Spark~3.5 fails on Java~25 (present on one developer host), so Spark runs inside the Airflow image on Java~17 while host tests auto-skip when Java is incompatible. Docker memory allocation was also raised from 3.7~GB to 5.0~GB so the Airflow scheduler and Spark JVM coexist reliably.
+\end{itemize}
+
+% ============================================================================
+\section{PySpark implementation and Gold architecture}\label{sec:pyspark}
+% ============================================================================
+
+\subsection{Docker and SparkSession configuration}
+The Airflow image (\texttt{apache/airflow:2.10.5-python3.11}) was extended with \texttt{default-jre-headless} (Java~17), \texttt{JAVA\_HOME=/usr/lib/jvm/default-java}, \texttt{pyspark==3.5.4}, and \texttt{vaderSentiment}. Distributed sessions are initialized centrally in \texttt{src/volcano\_pipeline/gold/spark.py} via \texttt{SparkSession. builder.master("local[*]")}:
+
+\begin{table}[htbp]
+\centering
+\caption{PySpark runtime settings configured for local-mode execution inside Docker.}\label{tab:spark_conf}
+\begin{tabular}{L{4.8cm}L{3.2cm}L{6.5cm}}
+\toprule
+\textbf{Spark configuration} & \textbf{Value} & \textbf{Engineering rationale}\\
+\midrule
+\texttt{spark.master} & \texttt{local[*]} & Uses all container cores without external cluster overhead.\\
+\texttt{spark.driver.memory} & \texttt{1g} (\texttt{SPARK\_DRIVER \_MEMORY}) & Fits safely alongside Airflow within the 5~GB Docker limit.\\
+\texttt{spark.sql.shuffle. partitions} & \texttt{8} & Prevents 200-partition shuffle overhead on $\sim$300k-row topics.\\
+\texttt{spark.sql.session. timeZone} & \texttt{UTC} & Aligns all window truncations with UTC Silver timestamps.\\
+\texttt{spark.sql.parquet. datetimeRebaseMode*} & \texttt{CORRECTED} & Reads pre-1582 Holocene GVP eruption timestamps accurately.\\
+\texttt{spark.ui.enabled} & \texttt{false} & Disables unused Spark Web UI ports inside scheduler tasks.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Gold DAG (\texttt{gold\_processing}) and shared output contract}
+The DAG \texttt{airflow/dags/gold\_processing\_dag.py} runs weekly (\texttt{0 3 * * 1}, Monday 03:00~UTC) and can also be triggered manually:
+\begin{enumerate}
+  \item \textbf{\texttt{check\_silver}:} Short-circuits cleanly if \texttt{datalake\_silver/} contains no Parquet topics yet.
+  \item \textbf{\texttt{build\_governance}:} Reads all Silver topics via \texttt{spark.read.parquet("datalake\_silver/<topic>/")}, computes governance KPIs, and writes \texttt{datalake\_gold/governance\_YYYYMMDD\_HHMMSS.parquet}.
+  \item \textbf{\texttt{build\_storytelling}:} Runs sequentially after governance so two JVMs never compete for RAM, writing \texttt{datalake\_gold/storytelling\_YYYYMMDD\_HHMMSS.parquet}.
+\end{enumerate}
+
+\shot{airflow_gold_processing.png}{0.92}{Task-level execution breakdown of \texttt{gold\_processing} (\texttt{check\_silver}, \texttt{build\_governance}, and \texttt{build\_storytelling}) in the Airflow Grid view.}
+
+Because Silver retains historical record revisions, \texttt{gold/silver\_reader.py} exposes a \texttt{latest()} window helper partitioned by \texttt{record\_id} and ordered by \texttt{processed\_utc DESC}. Both builders enforce a unified long schema (\texttt{gold/contract.py}) via \texttt{conform()}, coalescing output to a single Parquet file per summary so Workshop~4 Dash apps can load either dataset directly with \texttt{pandas.read\_parquet()}:
+
+\begin{table}[htbp]
+\centering
+\caption{Unified Gold Parquet output contract (\texttt{governance\_*.parquet} and \texttt{storytelling\_*.parquet}).}\label{tab:gold_contract}
+\begin{tabularx}{\textwidth}{ll >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Column} & \textbf{Spark type} & \textbf{Semantics}\\
+\midrule
+\texttt{section} & \texttt{string} & Target dashboard card or chart (e.g., \texttt{null\_rate}, \texttt{tone\_weekly}, \texttt{top\_keywords})\\
+\texttt{metric} & \texttt{string} & Measured indicator (\texttt{pct\_null}, \texttt{lexicon\_mean}, \texttt{baseline\_ratio}, \texttt{frequency})\\
+\texttt{dimension} & \texttt{string} & Breakdown key (field, source, \texttt{vnum}, observatory, keyword; nullable)\\
+\texttt{period} & \texttt{date} & ISO week/day start for time series; \texttt{null} for all-time metrics\\
+\texttt{value} & \texttt{double} & Numeric metric value\\
+\texttt{unit} & \texttt{string} & Measurement unit (\texttt{\%}, \texttt{records}, \texttt{score}, \texttt{ratio}, \texttt{characters})\\
+\texttt{generated\_utc} & \texttt{timestamp} & UTC timestamp when the Gold run produced the row\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ============================================================================
+\section{Data quality findings (Silver layer)}\label{sec:dq_findings}
+% ============================================================================
+
+Using \texttt{notebooks/03\_data\_quality\_findings.ipynb} (pandas over the Silver Parquet partitions measured on 2026-11-19 23:28~UTC), we audited all 7 Silver topics across 17 Parquet files and catalogued 24 explicit data quality findings (\texttt{F01--F24}). Table~\ref{tab:silver_inventory} summarizes the Silver baseline inventory, and Table~\ref{tab:dq_findings} documents the key findings.
+
+\begin{table}[htbp]
+\centering
+\caption{Silver layer topic inventory after full historical backfills (2026-11-19 23:28~UTC).}\label{tab:silver_inventory}
+\begin{tabularx}{\textwidth}{lrr >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Silver topic} & \textbf{Rows} & \textbf{Distinct IDs} & \textbf{Time span / primary content}\\
+\midrule
+\texttt{earthquakes} & 292,264 & 291,595 & 2010-01-01 to 2026-11-19 (within 30~km of US volcanoes)\\
+\texttt{notices} & 16,537 & 16,537 & 2010-01-01 to 2026-11-19 (HANS full-text bulletins)\\
+\texttt{eruptions} & 1,281 & 1,281 & Year 10 (BCE kept in \texttt{start\_year}) to 2025-10-20 (GVP)\\
+\texttt{volcanoes} & 165 & 165 & Static Smithsonian GVP US volcano catalogue\\
+\texttt{alert\_notices} & 56 & 56 & Latest HANS alert level and aviation colour per volcano\\
+\texttt{volcano\_updates} & 12 & 12 & 2026-11-02 to 2026-11-19 (scraped USGS Volcano Updates)\\
+\texttt{quarantine} & 2,108 & --- & Rejected records with explicit \texttt{reason} codes\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+
+\begin{longtable}{L{0.8cm}L{3.1cm}L{4.0cm}L{2.5cm}L{3.8cm}}
+\caption{Structured Silver data quality findings (\texttt{F01--F24}) justifying governance KPIs.}\label{tab:dq_findings}\\
+\toprule
+\textbf{ID} & \textbf{Affected field / topic} & \textbf{Issue observed} & \textbf{Severity} & \textbf{Handling strategy}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Affected field / topic} & \textbf{Issue observed} & \textbf{Severity} & \textbf{Handling strategy}\\
+\midrule
+\endhead
+\texttt{F01} & \texttt{eruptions.vei} & Missing VEI in GVP catalogue & $37.5\%$ (480/1,281) & Flagged \texttt{vei\_missing}; never imputed.\\
+\texttt{F02} & \texttt{notices.alert\_ level} & VONA notices carry only aviation colour & $7.9\%$ & Kept; \texttt{color\_code} available.\\
+\texttt{F03} & \texttt{notices.region} & Region-wide notices lack a single volcano & $11.4\%$ & Flagged via \texttt{is\_region\_wide}.\\
+\texttt{F04} & \texttt{alert\_notices. lat/lon} & Missing coordinates in HANS feed & $7.1\%$ & Flagged via \texttt{coords\_missing}.\\
+\texttt{F05} & Lineage columns & Gaps in \texttt{bronze\_file}, \texttt{sha256}, \texttt{processed\_utc} & $0\%$ (control) & Enforced by Silver writer.\\
+\texttt{F06} & \texttt{earthquakes} & Real USGS parameter revisions & 20 rows ($0.007\%$) & Kept; Gold selects \texttt{latest()}.\\
+\texttt{F07} & \texttt{earthquakes} & Same event re-hashed across \texttt{feed} vs.\ \texttt{fdsn} & 371 rows & Gold \texttt{latest()} unaffected; Silver fix proposed.\\
+\texttt{F08} & \texttt{earthquakes} & Exact copies due to single-hash state index (\texttt{feed$\to$fdsn$\to$feed}) & 278 rows ($0.095\%$) & Pipeline bug in \texttt{silver/state.py} reported to Part~1.\\
+\texttt{F09} & \texttt{usgs\_fdsn} (Bronze) & Overlapping 30~km radial queries return same quake up to 9$\times$ & 72,914 / 368,464 ($19.8\%$) & Removed by Silver deduplication index.\\
+\texttt{F10} & \texttt{notices.notice\_ id} & Shared ID between VAN and VONA pairs & 706 IDs & Composite key \texttt{id + notice\_type}.\\
+\texttt{F12} & Silver Parquet files & Schema deviation from Arrow contract & 0 / 17 files & \texttt{schemas.enforce()} before write.\\
+\texttt{F13--16} & \texttt{quarantine} & Non-tectonic events (2,089), no-notice/region HANS (15), missing ID/time (4) & 2,108 rows ($0.67\%$) & Separated into business rules vs.\ source defects; 0 pipeline errors.\\
+\texttt{F17--19} & \texttt{earthquakes. depth\_km / mag} & Per-batch Silver fences varied from M1.75 to M5.20 across 101 batches & $9.4\%$ depth / $3.2\%$ mag (per-volcano) & Gold recomputes consistent per-volcano IQR fences; flags never deleted.\\
+\texttt{F20--22} & \texttt{notices.text\_ clean} & Double-decoded UTF-8 mojibake (\emph{kä lauea}) in 9 notices; $99.89\%$ ASCII English & $0.054\%$ encoding errors & Monitored via \texttt{pct\_encoding\_errors}; \texttt{language\_distribution} excluded.\\
+\texttt{F23--24} & Bronze hourly files & Bronze writes only on change (1--2 new files/day); max age $0.7$~h hourly / $70$~h monthly & Expected schedule & Tracked via \texttt{ingestion\_frequency} and \texttt{freshness}.\\
+\bottomrule
+\end{longtable}
+
+Descriptive statistics on the newest earthquake versions ($291,595$ events) show a median magnitude of $1.71$ ($p_1\text{--}p_{99}: 1.0\text{--}3.8$, max $7.9$), median depth of $3.4$~km ($p_{99}: 154$~km, max $584$~km), and median distance to the nearest volcano of $16$~km. Notice median character lengths vary systematically by observatory: HVO $3,923$, YVO $2,471$, CalVO $1,852$, AVO $1,588$, NMI $1,165$, and CVO $904$.
+
+\subsection{Experimentation insights while profiling Silver}
+\begin{itemize}
+  \item \textbf{Separating real revisions from hash artifacts (\texttt{F06--F08}):} Initially, 389 extra earthquake rows appeared to be USGS revisions; comparing value-column hashes revealed that only 20 changed any geophysical attribute, whereas 371 differed solely due to JSON formatting between \texttt{usgs\_feed} and \texttt{usgs\_fdsn}, and 278 were exact copies caused by \texttt{silver/state.py} storing only one hash per ID.
+  \item \textbf{Per-volcano vs.\ global outlier fences (\texttt{F17--F19}):} The small Workshop~2 sample ($709$ quakes) yielded $27\%$ depth outliers, and global IQR fences across the full archive flagged $16.7\%$ due to deep Alaska subduction events. Computing per-volcano fences (falling back to global fences for the 33 volcanoes with $<30$ events) yields a physically meaningful $9.4\%$ depth outlier rate aligned with user story \texttt{US3}.
+\end{itemize}
+
+\shot{dq_null_rate.png}{0.88}{Top 15 Silver fields ranked by missing-value rate (\texttt{F01--F04}), generated by \texttt{notebooks/03\_data\_quality\_findings.ipynb}.}
+
+\shot{dq_outliers.png}{0.90}{Log-scale depth and magnitude distributions with per-volcano IQR outlier thresholds highlighted (\texttt{F17--F19}).}
+
+\shot{dq_quarantine.png}{0.88}{Quarantined records broken down by source and rejection reason (\texttt{F13--F16}).}
+
+% ============================================================================
+\section{Governance KPI definition and implementation}\label{sec:governance}
+% ============================================================================
+
+Six DAMA-DMBOK data-quality KPIs and three operational metrics are implemented in \texttt{src/volcano\_ pipeline/gold/governance.py} and verified in \texttt{tests/test\_gold\_governance.py}. Because all sources are English USGS/Smithsonian publications ($0.106\%$ non-ASCII characters, consisting solely of Hawaiian diacritics, proper names, and the 9 mojibake notices), \texttt{language\_distribution} was explicitly excluded and replaced by \texttt{text\_length.pct\_encoding\_errors}.
+
+\begin{longtable}{L{2.8cm}L{2.3cm}L{4.8cm}L{4.4cm}}
+\caption{PySpark Governance KPIs and operational metrics written to \texttt{datalake\_gold/governance\_*.parquet}.}\label{tab:gov_kpis}\\
+\toprule
+\textbf{Indicator (\texttt{section})} & \textbf{Dimension} & \textbf{PySpark computation} & \textbf{Measured result \& justification}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Indicator (\texttt{section})} & \textbf{Dimension} & \textbf{PySpark computation} & \textbf{\textbf{Measured result \& justification}}\\
+\midrule
+\endhead
+\texttt{null\_rate} & Completeness & Single-pass \texttt{avg(is\_missing)} across all columns of \texttt{latest()}, unpivoted (124 rows). & \texttt{eruptions.vei} $37.5\%$, \texttt{notices.region} $11.4\%$, lineage $0\%$ (\texttt{F01--F05}).\\
+\texttt{duplicate\_rate} & Uniqueness & \texttt{countDistinct} with \texttt{xxhash64} on value columns in Silver; explicit-schema JSON scan on Bronze FDSN. & Earthquakes: $0.095\%$ exact, $0.222\%$ same-value, $0.007\%$ real revisions; FDSN pre-dedup $19.8\%$ (\texttt{F06--F11}).\\
+\texttt{schema\_ compliance} & Validity (structure) & Footer-only \texttt{spark.read.parquet(file).schema} check on \texttt{df.inputFiles()} against \texttt{silver/schemas.py}. & $100\%$ across all 7 topics (17/17 files); preventive guard for \texttt{spark.read.parquet(<folder>)} (\texttt{F12}).\\
+\texttt{quarantine\_rate} & Validity (rules) & Full outer join of Silver and quarantine counts by \texttt{bronze\_file} source, mapped to 3 categories. & $0.67\%$ overall (\texttt{usgs\_hans} $21.1\%$, \texttt{usgs\_feed} $18.2\%$ business rules; $0\%$ pipeline errors, \texttt{F13--F16}).\\
+\texttt{outlier\_rate} & Accuracy / plausibility & Per-volcano \texttt{percentile\_approx([0.25, 0.75])} IQR fences (global fallback if $n<30$) vs.\ Silver flags. & Depth $9.4\%$ (Silver $5.7\%$), magnitude $3.2\%$ (Silver $3.8\%$); resolves batch drift (\texttt{F17--F19}).\\
+\texttt{text\_length} & Consistency & \texttt{avg}, \texttt{percentile\_approx(0.5)}, \texttt{min}, \texttt{max} per observatory/year + regex mojibake rate. & Median $2,076$~chars; encoding errors $0.054\%$ (\texttt{F20--F22}).\\
+\texttt{volume\_total} & Operational & Distinct \texttt{record\_id} counts overall and per ISO week (\texttt{volume\_weekly}). & 291,595 earthquakes, 16,537 notices (denominator context).\\
+\texttt{freshness} & Timeliness & Hours elapsed since newest \texttt{bronze\_file} timestamp per source. & $0.7$~h for hourly feeds, $70$~h for monthly GVP catalogue (\texttt{F24}, \texttt{US4}).\\
+\texttt{ingestion\_ frequency} & Timeliness & Distinct hours with a new Bronze file per day vs.\ expected schedule in \texttt{sources.yaml}. & 1--2 active file hours/day due to change-only Bronze writes (\texttt{F23}).\\
+\bottomrule
+\end{longtable}
+
+\shot{dq_text_length.png}{0.88}{Notice text length distribution and annual median trend across observatories (\texttt{F20}).}
+
+% ============================================================================
+\section{Storytelling definition, activity tone, and aggregations}\label{sec:storytelling}
+% ============================================================================
+
+\subsection{Dashboard narrative}
+\begin{quote}
+\textbf{Core analytical question:} \emph{Which U.S. volcanoes currently exhibit unusual activity, and is volcanic unrest building or fading across the monitored network?}
+\end{quote}
+
+Rather than displaying isolated raw tables per source, the Workshop~4 functional-user dashboard (\texttt{dashboard/storytelling\_app.py}) guides analysts and emergency managers through three progressive narrative layers aligned with our Workshop~1 user stories (\texttt{US1--US6}):
+\begin{enumerate}
+  \item \textbf{Network-Wide Situational Snapshot (\texttt{US1} \& \texttt{US6}):} Top KPI cards and observatory/region breakdowns establish the immediate operational posture across all 54 active U.S. alert entries. In our November~20, 2026 Gold snapshot (\texttt{storytelling\_20261120\_040850.parquet}), 51 volcanoes are at \texttt{NORMAL}/\texttt{GREEN} while \textbf{three volcanoes show elevated activity}: one at \texttt{WATCH}/\texttt{ORANGE} in the Alaska--Aleutians region (AVO) and two at \texttt{ADVISORY}/\texttt{YELLOW} in Hawaii (HVO) and the Northern Mariana Islands (NMI).
+  \item \textbf{Seismic Anomaly Detection vs.\ Historical Baseline (\texttt{US2} \& \texttt{US3}):} Raw earthquake counts are misleading because quiet Cascade volcanoes behave differently from hyper-active Hawaiian shields. Benchmarking weekly earthquake counts per \texttt{nearest\_vnum} against each volcano's own historical 90th percentile ($p_{90}$) highlights genuine pre-eruptive swarms (such as Mauna Loa, \texttt{vnum=332020}, reaching $55$ weekly events and a $1.0$ baseline ratio).
+  \item \textbf{Activity Tone Trajectory --- Building vs.\ Fading Unrest (\texttt{US4} \& \texttt{US5}):} Official alert levels change in coarse discrete steps (\texttt{NORMAL} $\to$ \texttt{ADVISORY} $\to$ \texttt{WATCH} $\to$ \texttt{WARNING}), whereas observatory summaries capture subtle week-to-week escalation or subsidence. Tracking the domain activity tone alongside ordinal alert levels reveals whether unrest language intensifies before formal upgrades or subsides after eruptions pause.
+\end{enumerate}
+
+\subsection{Domain activity tone vs.\ VADER (\texttt{gold/tone.py})}
+Standard sentiment libraries like VADER are calibrated on social media and treat technical volcanology prose as neutral or slightly negative regardless of hazard level. To solve this, \texttt{src/volcano\_pipeline/gold/tone.py} implements a domain-specific weighted lexicon (\texttt{score\_text\_lexicon}) over preprocessed notice summaries (\texttt{summary\_clean}, $99.8\%$ non-null across 16 years):
+\begin{itemize}
+  \item \textbf{Weighted domain terms:} Escalation cues carry positive weights (e.g., \emph{eruption} $+2.0$, \emph{ash plume} $+2.0$, \emph{lava fountaining} $+1.8$, \emph{tremor} $+1.4$, \emph{inflation} $+1.3$, \emph{elevated} $+1.0$), whereas calming cues carry negative weights (\emph{decreased} $-1.2$, \emph{subsided} $-1.5$, \emph{quiet} $-1.3$, \emph{background} $-1.1$, \emph{paused} $-1.2$).
+  \item \textbf{Negation and asymptotic normalization:} Negators (\emph{no}, \emph{not}, \emph{without}, \emph{absence}) within a 3-token window flip and damp the following term's polarity (e.g., \emph{``no ash emissions''} shifts from escalation to calm). Raw sums are mapped smoothly to $[-1, +1]$ via $s / (|s| + 2.5)$ and classified into \texttt{escalating} ($> +0.15$, red), \texttt{stable} ($[-0.15, +0.15]$, grey), and \texttt{calming} ($< -0.15$, green).
+  \item \textbf{Empirical comparison with VADER:} Across 882 weekly network observations in \texttt{storytelling\_20261120\_040850.parquet}, VADER stays compressed near zero ($\mu = -0.0123$, range $[-0.6791, +0.4783]$), failing to separate eruptive crises from quiet periods. In contrast, the volcanological lexicon spans $[-0.9715, +0.9995]$ ($\mu = +0.6170$ across active volcano-weeks) and co-varies with the mean ordinal alert level ($\mu = 2.49$ on the $1\text{--}4$ scale).
+\end{itemize}
+
+\subsection{PySpark storytelling aggregations (\texttt{gold/storytelling.py})}
+\texttt{build\_storytelling(spark)} produces six conformed aggregations totaling \textbf{6,041 rows} in our full run:
+
+\begin{longtable}{L{3.1cm}L{1.3cm}L{5.0cm}L{4.9cm}}
+\caption{PySpark Storytelling aggregations written to \texttt{datalake\_gold/storytelling\_*.parquet}.}\label{tab:story_aggs}\\
+\toprule
+\textbf{Aggregation (\texttt{section})} & \textbf{User story} & \textbf{PySpark computation} & \textbf{Real findings (\texttt{20261120\_040850})}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Aggregation (\texttt{section})} & \textbf{User story} & \textbf{PySpark computation} & \textbf{Real findings (\texttt{20261120\_040850})}\\
+\midrule
+\endhead
+\texttt{tone\_weekly} & \texttt{US4}, \texttt{US5} & Weekly mean \texttt{lexicon\_score} per volcano and network-wide weekly mean \texttt{lexicon\_score}, \texttt{vader\_score}, and \texttt{alert\_level\_ord}. & 5,547 rows across 882 weeks; lexicon spans $[-0.9715, +0.9995]$ vs.\ VADER $\mu = -0.0123$.\\
+\texttt{top\_keywords} & \texttt{US4} & Explodes \texttt{summary\_tokens} for top 25 unigrams and top 20 bigrams; joins mean \texttt{lexicon\_score} per term. & 90 rows (45 terms $\times$ 2 metrics); top unigrams: \emph{lava} (15,315), \emph{activity} (14,481), \emph{volcano} (14,116), \emph{summit} (12,136), \emph{satellite} (8,223).\\
+\texttt{source\_ comparison} & \texttt{US1}, \texttt{US5} & Compares record count, mean text length, mean lexicon tone, and mean VADER score between HANS API and scraped updates. & HANS API: $16,537$ notices, $2,673.5$ chars, $\mu_{\text{lex}} = +0.8499$; Scraped updates: $9$ briefs, $1,434.8$ chars, $\mu_{\text{lex}} = +0.4851$.\\
+\texttt{earthquakes\_ baseline} & \texttt{US2}, \texttt{US3} & Weekly quake counts per \texttt{nearest\_vnum} over the trailing 8 weeks vs.\ each volcano's historical $p_{90}$ weekly count (\texttt{baseline\_ratio}). & 345 rows across 115 volcano-weeks; mean weekly count $3.42$ vs.\ mean $p_{90}$ of $8.97$ (mean ratio $0.78$); Mauna Loa (\texttt{332020}) hits ratio $1.0$.\\
+\texttt{earthquakes\_ weekly} & \texttt{US2} & Network-wide weekly earthquake volume near US volcanoes. & 27 weekly points (mean $21.9$, peak $172$ events/week).\\
+\texttt{alerts\_breakdown} & \texttt{US1}, \texttt{US6} & Distinct monitored volcanoes grouped by \texttt{(observatory, alert\_level)} and \texttt{(region, color\_code)}. & 24 rows covering 54 volcanoes: 30 AVO \texttt{NORMAL}, 1 AVO \texttt{WATCH} (Aleutians), 1 HVO \texttt{ADVISORY} (Hawaii), 1 NMI \texttt{ADVISORY}.\\
+\bottomrule
+\end{longtable}
+
+% ============================================================================
+\section{Results evidence and verification}\label{sec:evidence}
+% ============================================================================
+
+\begin{itemize}
+  \item \textbf{Automated test suite:} Running \texttt{pytest -q} inside the Airflow container executes all unit tests across Bronze, Silver, PostgreSQL loaders, Governance KPIs (\texttt{tests/test\_gold\_govern- ance.py}), and Storytelling aggregations (\texttt{tests/test\_gold\_storytelling.py}), passing \textbf{124 tests} with 0 failures.
+  \item \textbf{Exploratory notebooks and repository samples:} \texttt{notebooks/03\_data\_quality\_findi- ngs.ipynb} and \texttt{notebooks/04\_gold\_preview.ipynb} read the generated Gold Parquet outputs and render validation tables and charts. Representative Gold outputs are committed under \texttt{workshop\_3/samples/}.
+\end{itemize}
+
+\shot{airflow_storytelling_gold.png}{0.95}{Airflow UI showing all pipeline DAGs active and successful runs across \texttt{bronze\_backfill\_hans\_notices}, \texttt{bronze\_ingestion}, \texttt{silver\_processing}, and \texttt{gold\_processing}.}
+
+\shot{gold_governance_preview.png}{0.90}{Preview of \texttt{datalake\_gold/governance\_20261119\_234142.parquet} showing computed governance KPIs across Silver topics.}
+
+\shot{tone_weekly_comparison.png}{0.95}{Weekly activity tone over the trailing 52 weeks comparing the domain volcanological lexicon against VADER (\texttt{notebooks/04\_gold\_preview.ipynb}).}
+
+\shot{top_keywords_chart.png}{0.90}{Top 15 unigrams extracted from preprocessed HANS notice summaries (\texttt{notebooks/04\_gold\_preview.ipynb}).}
+
+\begin{lstlisting}[basicstyle=\tiny\ttfamily, caption={Excerpt of real Gold storytelling Parquet output (\texttt{datalake\_gold/storytelling\_20261120\_040850.parquet}, 6,041 rows total) inspected with pandas.}]
+>>> df = pd.read_parquet("datalake_gold/storytelling_20261120_040850.parquet")
+>>> df[df["section"].isin(["source_comparison", "alerts_breakdown"])][["section","metric","dimension","value"]].head(10)
+             section                      metric                      dimension         value
+0  source_comparison                     records          usgs_hans_notices_api  16537.000000
+1  source_comparison                     records  usgs_volcano_updates_scraping      9.000000
+2  source_comparison            mean_text_length          usgs_hans_notices_api   2673.451170
+3  source_comparison            mean_text_length  usgs_volcano_updates_scraping   1434.777778
+4  source_comparison                lexicon_mean          usgs_hans_notices_api      0.849895
+5  source_comparison                lexicon_mean  usgs_volcano_updates_scraping      0.485122
+6   alerts_breakdown  volcanoes_by_observatory_alert                      avo|WATCH      1.000000
+7   alerts_breakdown  volcanoes_by_observatory_alert                     avo|NORMAL     30.000000
+8   alerts_breakdown  volcanoes_by_observatory_alert                   hvo|ADVISORY      1.000000
+9   alerts_breakdown  volcanoes_by_observatory_alert                   nmi|ADVISORY      1.000000
+\end{lstlisting}
+
+\begin{thebibliography}{9}
+\bibitem{airflow} Apache Software Foundation. \emph{Apache Airflow 2.10.5 Documentation}: TaskFlow API, Sensors, and Docker Compose. \url{https://airflow.apache.org/docs/apache-airflow/2.10.5/}
+\bibitem{spark} Apache Software Foundation. \emph{Apache Spark 3.5.4 Documentation}: PySpark SQL API (\texttt{unpivot}, \texttt{percentile\_approx}, \texttt{xxhash64}) and Parquet Data Sources. \url{https://spark.apache.org/docs/3.5.4/api/python/}
+\bibitem{dama} DAMA International (2017). \emph{DAMA-DMBOK: Data Management Body of Knowledge}, 2nd ed., Chapter~13 (Data Quality).
+\bibitem{iso} ISO/IEC 25012:2008. \emph{Software engineering --- Software product Quality Requirements and Evaluation (SQuaRE) --- Data quality model}.
+\bibitem{vader} Hutto, C.J. and Gilbert, E.E. (2014). \emph{VADER: A Parsimonious Rule-based Model for Sentiment Analysis of Social Media Text}. Eighth International Conference on Weblogs and Social Media (ICWSM-14).
+\bibitem{tukey} Tukey, J.W. (1977). \emph{Exploratory Data Analysis}. Addison-Wesley.
+\bibitem{gvp} Global Volcanism Program (2026). \emph{Volcanoes of the World} (v.~5.4.0). Smithsonian Institution. \url{https://doi.org/10.5479/si.GVP.VOTW5-2026.5.4}
+\bibitem{hans} U.S. Geological Survey, Volcano Hazards Program. \emph{Hazard Notification System (HANS) Public API}. \url{https://volcanoes.usgs.gov/hans-public/api}
+\bibitem{usgsfeed} U.S. Geological Survey, Earthquake Hazards Program. \emph{ComCat FDSN Event Service and Real-Time GeoJSON Feeds}. \url{https://earthquake.usgs.gov/fdsnws/event/1/}
+\end{thebibliography}
+
+\end{document}
