@@ -33,7 +33,7 @@ def main() -> None:
     for source in BRONZE_SOURCES:
         copied += [shutil.copy2(p, out / "bronze") for p in bronze_files(bronze, source)[-n:]]
     for topic in SILVER_TOPICS:
-        copied += [shutil.copy2(p, out / "silver") for p in sorted(silver.glob(f"{topic}_*.parquet"))[-n:]]
+        copied += [shutil.copy2(p, out / "silver") for p in sorted([*(silver / topic).glob(f"{topic}_*.parquet"), *silver.glob(f"{topic}_*.parquet")])[-n:]]
     copied += [shutil.copy2(p, out / "quarantine") for p in sorted((silver / "quarantine").glob("rejected_*.parquet"))[-1:]]
     for p in copied:
         print(Path(p).relative_to(ROOT))

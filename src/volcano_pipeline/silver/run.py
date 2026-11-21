@@ -19,12 +19,14 @@ from pathlib import Path
 import pandas as pd
 
 from ..normalization.canonical import content_hash
-from .io import write_quarantine, write_topic
+from .io import topic_path, write_quarantine, write_topic
 from .state import filter_unseen, load_manifest, mark_processed, update_seen
-from .transform import TRANSFORMS, build_context
+from .transform import TRANSFORMS, build_context, hans_volcano_map
 
 log = logging.getLogger(__name__)
 
+# Bronze sources that only feed the transform context (lookups), never a Silver topic
+REFERENCE_SOURCES = {"usgs_hans_volcanoes"}
 BRONZE_NAME = re.compile(r"^(?P<source>[a-z0-9_]+?)_(?P<ts>\d{8}_\d{6})\.json$")
 
 
@@ -47,19 +49,26 @@ def unprocessed_files(bronze_dir: Path, silver_dir: Path) -> list[Path]:
     return sorted(files, key=_timestamp_key)
 
 
-def _context(bronze_dir: Path, radius_km: float, min_magnitude: float | None) -> dict:
-    latest = sorted(bronze_dir.glob("gvp_volcanoes_*.json"), key=_timestamp_key)
-    for path in reversed(latest):
+def _latest_envelope(bronze_dir: Path, source_id: str) -> dict | None:
+    names = [p for p in bronze_dir.glob(f"{source_id}_*.json") if re.fullmatch(rf"{source_id}_\d{{8}}_\d{{6}}\.json", p.name)]
+    for path in reversed(sorted(names, key=_timestamp_key)):
         try:
-            return build_context(json.loads(path.read_text(encoding="utf-8")), radius_km, min_magnitude)
+            return json.loads(path.read_text(encoding="utf-8"))
         except ValueError:
             continue
-    return build_context(None, radius_km, min_magnitude)
+    return None
+
+
+def _context(bronze_dir: Path, radius_km: float, min_magnitude: float | None) -> dict:
+    ctx = build_context(_latest_envelope(bronze_dir, "gvp_volcanoes"), radius_km, min_magnitude)
+    # volcano code -> vnum / region for the HANS notice texts
+    ctx["hans_volcanoes"] = hans_volcano_map(_latest_envelope(bronze_dir, "usgs_hans_volcanoes"))
+    return ctx
 
 
 def _output_paths(silver_dir: Path, topics: list[str], when: datetime) -> list[Path]:
     stamp = f"{when:%Y%m%d_%H%M%S}"
-    return ([silver_dir / f"{t}_{stamp}.parquet" for t in topics]
+    return ([topic_path(silver_dir, t, when) for t in topics]
             + [silver_dir / "quarantine" / f"rejected_{stamp}.parquet"])
 
 
@@ -120,6 +129,8 @@ def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] |
             rejects.append({"source_id": None, "reason": "unreadable_bronze",
                             "payload": raw[:2000].decode("utf-8", "replace"), "bronze_file": path.name})
             continue
+        if source_id in REFERENCE_SOURCES:
+            continue        # read through _context(), not a Silver topic: processed, nothing to write
         transform = TRANSFORMS.get(source_id)
         if transform is None:
             rejects.append({"source_id": source_id, "reason": "unknown_source",
@@ -144,7 +155,7 @@ def process_bronze_files(bronze_dir: Path, silver_dir: Path, files: list[Path] |
         fresh = filter_unseen(pd.concat(parts, ignore_index=True), sdir, topic)
         path = write_topic(fresh, silver_dir, topic, when)
         if path is not None:
-            written[topic] = path.name
+            written[topic] = path.relative_to(silver_dir).as_posix()
             fresh_by_topic[topic] = fresh
     rejects, rejects_seen = _new_rejects(rejects, sdir)
     write_quarantine(rejects, silver_dir, when)

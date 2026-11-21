@@ -1,8 +1,5 @@
 -- Workshop 2: Silver quality indicators and lineage in the project database.
--- Runs after 001_schema_draft.sql on the first start of the project-db container.
--- Idempotent (IF NOT EXISTS / OR REPLACE / ON CONFLICT), so it can also be applied by hand to a
--- database that already exists:
---   docker compose exec -T project-db psql -U volcano -d volcano < sql/002_silver_indicators.sql
+-- Applied by the db-migrate service after 001. Idempotent (IF NOT EXISTS / OR REPLACE / ON CONFLICT).
 --
 -- Column names follow the Silver Parquet schemas (src/volcano_pipeline/silver/schemas.py) so the
 -- loader can copy them 1:1. Silver record_id = event_id ('<namespace>:<native id>').

@@ -14,7 +14,8 @@ def make_session(user_agent: str, retries: int = 4, backoff: float = 2.0) -> req
         total=retries,
         backoff_factor=backoff,                     # 2, 4, 8, 16 s
         status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=("GET", "HEAD"),
+        # POST only reaches read-only search endpoints (HANS notice search), so retrying is safe
+        allowed_methods=("GET", "HEAD", "POST"),
         respect_retry_after_header=True,
     )
     session.mount("https://", HTTPAdapter(max_retries=retry))

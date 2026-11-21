@@ -57,6 +57,16 @@ SCHEMAS: dict[str, pa.Schema] = {
         ("issued_raw", pa.string()), ("notice_number", pa.string()), ("notice_url", pa.string()),
         ("text_clean", pa.string()), ("tokens", pa.list_(pa.string())), ("token_count", pa.int64()),
     ] + [(k, pa.bool_()) for k in KEYWORD_COLUMNS]),
+    # HANS notice texts (usgs_hans_notices), the text corpus of the storytelling summary
+    "notices": _schema([
+        ("notice_identifier", pa.string()), ("sent_time", TS), ("observatory", CAT), ("notice_type", CAT),
+        ("volcano_codes", pa.string()), ("vnums", pa.list_(pa.int64())), ("vnum", pa.int64()),
+        ("volcano_name", pa.string()), ("region", CAT), ("is_region_wide", pa.bool_()),
+        ("alert_level", CAT), ("alert_level_ord", pa.int64()), ("color_code", CAT),
+        ("summary_clean", pa.string()), ("summary_tokens", pa.list_(pa.string())),
+        ("text_clean", pa.string()), ("tokens", pa.list_(pa.string())), ("token_count", pa.int64()),
+        ("text_length", pa.int64()), ("summary_length", pa.int64()), ("notice_url", pa.string()),
+    ] + [(k, pa.bool_()) for k in KEYWORD_COLUMNS]),
 }
 
 QUARANTINE_SCHEMA = pa.schema([

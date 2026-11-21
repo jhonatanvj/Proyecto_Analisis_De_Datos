@@ -44,7 +44,7 @@ def test_idempotent_second_run(tmp_path):
     assert first["rejected"] > 0 and first["out_of_scope"] == 1
     again = process_bronze_files(bronze, silver, when=T2)
     assert again["processed"] == [] and again["written"] == {}
-    assert len(list(silver.glob("earthquakes_*.parquet"))) == 1
+    assert len(list((silver / "earthquakes").glob("earthquakes_*.parquet"))) == 1
 
 
 def test_overlap_between_feed_files(tmp_path):
@@ -96,7 +96,7 @@ def test_lineage_columns(tmp_path):
     assert set(df["bronze_file"]) == {"usgs_feed_20261116_010000.json"}
     assert df["bronze_sha256"].str.len().eq(64).all()
     assert (df["processed_utc"] == pd.Timestamp(T1)).all()
-    assert out["written"]["earthquakes"] == "earthquakes_20261116_031500.parquet"
+    assert out["written"]["earthquakes"] == "earthquakes/earthquakes_20261116_031500.parquet"
 
 
 def test_crash_after_writing_does_not_duplicate_rows(tmp_path, monkeypatch):
@@ -112,7 +112,7 @@ def test_crash_after_writing_does_not_duplicate_rows(tmp_path, monkeypatch):
         pass
     monkeypatch.undo()
     process_bronze_files(bronze, silver, when=T2)
-    files = list(silver.glob("earthquakes_*.parquet"))
+    files = list((silver / "earthquakes").glob("earthquakes_*.parquet"))
     assert len(files) == 1 and files[0].name == "earthquakes_20261116_041500.parquet"
 
 

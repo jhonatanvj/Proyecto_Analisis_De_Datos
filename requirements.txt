@@ -12,8 +12,12 @@ beautifulsoup4>=4.12
 lxml>=5.0
 # Project database loader (Silver -> PostgreSQL)
 psycopg[binary]>=3.1
+# Gold layer (Workshop 3). Spark 3.5 needs Java 8/11/17; on another Java, run the Spark
+# tests inside Docker: docker compose run --rm airflow-scheduler python -m pytest -q
+pyspark==3.5.4
 # Workshop 3+ (uncomment when used)
 # SQLAlchemy>=2.0
 # GeoAlchemy2>=0.14
 # dash>=2.16
 # plotly>=5.20
+vaderSentiment>=3.3.2

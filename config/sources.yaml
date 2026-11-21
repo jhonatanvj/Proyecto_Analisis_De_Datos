@@ -16,6 +16,15 @@ spatial:
   volcano_selection:                  # which volcanoes get radial FDSN queries
     min_last_eruption_year: null      # null = every US volcano (quiet Cascades volcanoes need a baseline too)
 
+event_matching:                       # event_group rules (storage/event_groups.py), rebuilt after each load
+  same_quake:                         # one earthquake reported by two networks under two ids
+    max_seconds: 16                   # ComCat associates origins within 16 s
+    max_km: 10
+    max_mag_diff: 0.5
+    neighbours: 3                     # compare each event with the next 3 in time (window function)
+  volcano_episode:                    # alert notices, eruptions and nearby earthquakes of one volcano in one ISO week
+    anchor_types: [alert_notice, eruption]
+
 indicator:                            # Volcano Activity Indicator (VAI), preliminary - Workshop #4
   weights: {reported: 0.45, seismic: 0.35, eruptive: 0.20}
   # R = official USGS alert level (HANS); the aviation colour code is shown, not scored separately
@@ -93,6 +102,22 @@ sources:
     schedule: "@daily"          # also used to catch revisions with updatedafter=<watermark>
     watermark_field: updated
     duplicate_key: [id]
+    # Incremental mode (bronze_ingestion, ingest.py --mode incremental): events created OR revised
+    # since the watermark (updatedafter), one query per US volcanic region instead of 165 radial
+    # queries; Silver keeps only events within volcano_radius_km of a volcano. The boxes contain
+    # every US volcano with a 30 km margin (checked against the 169 volcanoes on 2026-11-19).
+    incremental:
+      event_start: "2010-01-01"  # FDSN defaults starttime to 30 days ago; revisions of older events count too
+      overlap_minutes: 60
+      first_window_days: 7
+      max_events: 20000          # FDSN limit per request; a full answer means the window is too wide
+      regions:                   # [min_lat, max_lat, min_lon, max_lon]
+        alaska: [50, 67, -180, -129]
+        aleutians_west: [50, 56, 172, 180]
+        west_conus: [31, 50, -129, -103]
+        hawaii: [18, 23, -161, -154]
+        marianas: [12.5, 24.5, 142.5, 147]
+        american_samoa: [-15.5, -13, -172, -168]
 
   # Incremental sources
   - source_id: usgs_hans
@@ -121,6 +146,43 @@ sources:
       - {vnum: 323180, name: Coso Volcanic Field, latitude: 36.03, longitude: -117.82, observatory: calvo}
       - {vnum: 323822, name: Long Valley Caldera, latitude: 37.70, longitude: -118.87, observatory: calvo}
       - {vnum: 325010, name: Yellowstone, latitude: 44.43, longitude: -110.67, observatory: yvo}
+
+  - source_id: usgs_hans_notices
+    name: USGS HANS notice search - full text of every volcano notice (daily/weekly updates, VAN, VONA...)
+    role: incremental           # hourly: notices sent since the watermark; history loaded once by backfill
+    owner: U.S. Geological Survey, Volcano Hazards Program
+    url: https://volcanoes.usgs.gov/hans-public/api
+    endpoints:                  # verified 2026-11-19
+      search: search/search     # POST JSON body, 20 notices per page with their full HTML
+      preflight: search/preflight
+    format: json
+    auth: none
+    rate_limit: "not published - one page per second; ~830 pages for the whole archive since 2010"
+    license: "Public domain (U.S. Government). Credit: U.S. Geological Survey Volcano Hazards Program"
+    citation: "U.S. Geological Survey, Volcano Hazards Program, Hazard Notification System (HANS) public API"
+    schedule: "0 * * * *"
+    historical_start: "2010-01-01"
+    overlap_hours: 6            # re-read a few hours before the watermark: a late notice is not missed, dedup drops repeats
+    first_window_days: 30       # incremental run with no watermark yet (before the backfill)
+    page_pause_seconds: 1.0
+    watermark_field: sentUnixtime
+    duplicate_key: [noticeIdentifier, noticeTypeCd]   # a VAN and its VONA share the identifier
+
+  - source_id: usgs_hans_volcanoes
+    name: USGS HANS public API - US volcano reference list (volcano code, vnum, region, coordinates)
+    role: optional              # reference data, refreshed monthly; maps notice volcano codes to vnum and region
+    owner: U.S. Geological Survey, Volcano Hazards Program
+    url: https://volcanoes.usgs.gov/hans-public/api
+    endpoints:
+      us_volcanoes: volcano/getUSVolcanoes
+    format: json
+    auth: none
+    rate_limit: "one request per month"
+    license: "Public domain (U.S. Government). Credit: U.S. Geological Survey Volcano Hazards Program"
+    citation: "U.S. Geological Survey, Volcano Hazards Program, Hazard Notification System (HANS) public API"
+    schedule: "@monthly"
+    watermark_field: content_sha256
+    duplicate_key: [volcano_cd]
 
   - source_id: usgs_feed
     name: USGS real-time GeoJSON summary feed (all earthquakes, past 7 days)

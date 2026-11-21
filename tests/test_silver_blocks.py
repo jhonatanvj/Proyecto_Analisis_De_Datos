@@ -20,6 +20,15 @@ def test_clean_text_empty():
     assert clean_text("") == "" and clean_text(None) == ""
 
 
+def test_okina_and_macrons_do_not_split_or_duplicate_names():
+    # spellings found in the HANS notices: backticks (2010-2014) and the ʻokina (later)
+    text = clean_text("Halema`uma`u and Pu`u `O`o near Kīlauea; Halemaʻumaʻu, Puʻu ʻŌʻō, Kilauea")
+    assert "kīlauea" in text                          # text_clean keeps the macron for display
+    tokens = tokenize(text, set())
+    assert tokens.count("halemaumau") == 2 and tokens.count("kilauea") == 2
+    assert tokens.count("puu") == 2 and tokens.count("oo") == 2
+
+
 def test_tokenize_drops_stopwords_short_and_numeric_tokens():
     assert tokenize("the lava is erupting at the summit 56 a", {"the", "is", "at"}) == ["lava", "erupting", "summit"]
 

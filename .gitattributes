@@ -5,3 +5,5 @@ tests/fixtures/*.xml -text
 data/raw/** -text
 tests/fixtures/** -text
 workshop_2/samples/** -text
+# Shell scripts run inside Linux containers: never convert them to CRLF
+*.sh text eol=lf

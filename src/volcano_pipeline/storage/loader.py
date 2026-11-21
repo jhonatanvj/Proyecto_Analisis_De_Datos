@@ -11,6 +11,9 @@ Each Silver file is loaded in one transaction:
    ``ingestion_state`` and the file name in ``silver_load_file`` are written in the same
    transaction, so data and watermark always move together.
 
+After a load that touched earthquakes, eruptions or alert notices, event_group is rebuilt
+(storage/event_groups.py).
+
 Files are loaded oldest first and, for the same timestamp, volcanoes before the tables that
 reference them. A file already listed in ``silver_load_file`` is skipped. If a file fails, its
 transaction is rolled back, a ``failed`` run is recorded and the loader stops, because later
@@ -30,11 +33,12 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-TOPIC_ORDER = ["volcanoes", "eruptions", "earthquakes", "alert_notices", "volcano_updates", "quarantine"]
+TOPIC_ORDER = ["volcanoes", "eruptions", "earthquakes", "alert_notices", "volcano_updates", "notices", "quarantine"]
 SILVER_NAME = re.compile(r"^(?P<topic>[a-z_]+?)_(?P<ts>\d{8}_\d{6})\.parquet$")
 BRONZE_SOURCE = re.compile(r"^(?P<source>[a-z0-9_]+?)_\d{8}_\d{6}\.json$")
 DEFAULT_SOURCE = {"volcanoes": "gvp_volcanoes", "eruptions": "gvp_eruptions", "earthquakes": "usgs_feed",
-                  "alert_notices": "usgs_hans", "volcano_updates": "usgs_volcano_updates"}
+                  "alert_notices": "usgs_hans", "volcano_updates": "usgs_volcano_updates",
+                  "notices": "usgs_hans_notices"}
 COLOR_CODES = {"GREEN", "YELLOW", "ORANGE", "RED"}
 LOCK_KEY = 6_2026_11   # pg_advisory_xact_lock key: one loader at a time (Airflow task vs ingest.py)
 
@@ -50,9 +54,15 @@ class SchemaMissing(RuntimeError):
 # --------------------------------------------------------------------------- files and sources
 
 def silver_files(silver_dir: Path) -> list[tuple[str, str, Path]]:
-    """(topic, name relative to silver_dir, path) for every Silver file, in load order."""
+    """(topic, load name, path) for every Silver file, in load order.
+
+    Topic files live in datalake_silver/<topic>/ (older runs wrote them to datalake_silver/
+    directly; both are read). The load name of a topic file is its bare file name, so moving a
+    file between the two layouts does not load it again; quarantine files are 'quarantine/<name>'.
+    """
     found = []
     candidates = [(p, p.name) for p in silver_dir.glob("*.parquet")]
+    candidates += [(p, p.name) for t in TOPIC_ORDER[:-1] for p in (silver_dir / t).glob(f"{t}_*.parquet")]
     candidates += [(p, f"quarantine/{p.name}") for p in (silver_dir / "quarantine").glob("rejected_*.parquet")]
     for path, rel in candidates:
         m = SILVER_NAME.match(path.name)
@@ -143,6 +153,10 @@ def prep_volcano_updates(df: pd.DataFrame) -> Prepared:
     return Prepared(_with_source(df, "volcano_updates"))
 
 
+def prep_notices(df: pd.DataFrame) -> Prepared:
+    return Prepared(_with_source(df, "notices"))
+
+
 def prep_quarantine(df: pd.DataFrame) -> Prepared:
     df = df.reset_index(drop=True).copy()
     df["source_id"] = [s if isinstance(s, str) and s else source_of(b) for s, b in zip(df["source_id"], df["bronze_file"])]
@@ -163,7 +177,7 @@ def _as_json(payload) -> str:
 
 PREPARE = {"volcanoes": prep_volcanoes, "eruptions": prep_eruptions, "earthquakes": prep_earthquakes,
            "alert_notices": prep_alert_notices, "volcano_updates": prep_volcano_updates,
-           "quarantine": prep_quarantine}
+           "notices": prep_notices, "quarantine": prep_quarantine}
 
 
 def watermark_candidates(topic: str, stage: pd.DataFrame, cfg: dict) -> dict[str, tuple[str, str]]:
@@ -173,7 +187,8 @@ def watermark_candidates(topic: str, stage: pd.DataFrame, cfg: dict) -> dict[str
     if topic in ("volcanoes", "eruptions"):
         version = _source_cfg(cfg, DEFAULT_SOURCE[topic]).get("database_version")
         return {s: ("version", str(version)) for s in stage["source_id"].unique()} if version else {}
-    column = {"earthquakes": "updated_time", "alert_notices": "sent_time", "volcano_updates": "as_of_time"}[topic]
+    column = {"earthquakes": "updated_time", "alert_notices": "sent_time", "volcano_updates": "as_of_time",
+              "notices": "sent_time"}[topic]
     out = {}
     for source, part in stage.groupby("source_id"):
         latest = part[column].max()
@@ -212,7 +227,7 @@ def py_values(series: pd.Series) -> list:
     out = []
     for x in series:
         if isinstance(x, (np.ndarray, tuple, list)):
-            out.append([str(t) for t in x])
+            out.append([t.item() if isinstance(t, np.generic) else t for t in x])
         elif x is None or (np.isscalar(x) and pd.isna(x)):
             out.append(None)
         else:
@@ -263,6 +278,16 @@ STAGE_COLUMNS = {
                         ("text_clean", "text"), ("tokens", "text[]"), ("token_count", "int8"),
                         ("kw_eruption", "bool"), ("kw_ash", "bool"), ("kw_lava", "bool"), ("kw_seismicity", "bool"),
                         ("kw_deformation", "bool"), ("kw_gas", "bool"), ("kw_plume", "bool")] + LINEAGE_COLS,
+    "notices": [("record_id", "text"), ("content_hash", "text"), ("source_id", "text"), ("run_id", "int8"),
+                ("notice_identifier", "text"), ("sent_time", "timestamptz"), ("observatory", "text"),
+                ("notice_type", "text"), ("volcano_codes", "text"), ("vnums", "int8[]"), ("vnum", "int8"),
+                ("volcano_name", "text"), ("region", "text"), ("is_region_wide", "bool"),
+                ("alert_level", "text"), ("alert_level_ord", "int8"), ("color_code", "text"),
+                ("summary_clean", "text"), ("summary_tokens", "text[]"), ("text_clean", "text"),
+                ("tokens", "text[]"), ("token_count", "int8"), ("text_length", "int8"), ("summary_length", "int8"),
+                ("notice_url", "text"), ("kw_eruption", "bool"), ("kw_ash", "bool"), ("kw_lava", "bool"),
+                ("kw_seismicity", "bool"), ("kw_deformation", "bool"), ("kw_gas", "bool"),
+                ("kw_plume", "bool")] + LINEAGE_COLS,
     "quarantine": [("source_id", "text"), ("run_id", "int8"), ("reason", "text"), ("payload", "text"),
                    ("bronze_file", "text"), ("processed_utc", "timestamptz")],
 }
@@ -443,6 +468,40 @@ WITH up AS (
     RETURNING record_id, source_id, (xmax = 0) AS is_new)
 INSERT INTO changed SELECT * FROM up"""],
 
+    "notices": ["""
+WITH up AS (
+    INSERT INTO volcano_notice (record_id, content_hash, source_id, notice_identifier, notice_type, sent_time,
+        observatory, volcano_codes, vnums, volcano_number, volcano_name, region, is_region_wide, alert_level,
+        alert_level_ord, color_code, summary_clean, summary_tokens, text_clean, tokens, token_count,
+        text_length, summary_length, notice_url, kw_eruption, kw_ash, kw_lava, kw_seismicity, kw_deformation,
+        kw_gas, kw_plume, bronze_file, bronze_sha256, silver_processed_utc)
+    SELECT s.record_id, s.content_hash, s.source_id, s.notice_identifier, s.notice_type, s.sent_time,
+        s.observatory, s.volcano_codes, coalesce(s.vnums, '{}')::integer[], v.volcano_number, s.volcano_name,
+        s.region, coalesce(s.is_region_wide, false), s.alert_level, s.alert_level_ord, s.color_code,
+        s.summary_clean, coalesce(s.summary_tokens, '{}'), s.text_clean, coalesce(s.tokens, '{}'),
+        coalesce(s.token_count, 0), s.text_length, s.summary_length, s.notice_url, s.kw_eruption, s.kw_ash,
+        s.kw_lava, s.kw_seismicity, s.kw_deformation, s.kw_gas, s.kw_plume,
+        s.bronze_file, s.bronze_sha256, s.processed_utc
+    FROM stage s
+    LEFT JOIN volcano v ON v.volcano_number = s.vnum
+    ON CONFLICT (record_id) DO UPDATE SET
+        content_hash = EXCLUDED.content_hash, sent_time = EXCLUDED.sent_time, observatory = EXCLUDED.observatory,
+        volcano_codes = EXCLUDED.volcano_codes, vnums = EXCLUDED.vnums, volcano_number = EXCLUDED.volcano_number,
+        volcano_name = EXCLUDED.volcano_name, region = EXCLUDED.region, is_region_wide = EXCLUDED.is_region_wide,
+        alert_level = EXCLUDED.alert_level, alert_level_ord = EXCLUDED.alert_level_ord,
+        color_code = EXCLUDED.color_code, summary_clean = EXCLUDED.summary_clean,
+        summary_tokens = EXCLUDED.summary_tokens, text_clean = EXCLUDED.text_clean, tokens = EXCLUDED.tokens,
+        token_count = EXCLUDED.token_count, text_length = EXCLUDED.text_length,
+        summary_length = EXCLUDED.summary_length, notice_url = EXCLUDED.notice_url,
+        kw_eruption = EXCLUDED.kw_eruption, kw_ash = EXCLUDED.kw_ash, kw_lava = EXCLUDED.kw_lava,
+        kw_seismicity = EXCLUDED.kw_seismicity, kw_deformation = EXCLUDED.kw_deformation,
+        kw_gas = EXCLUDED.kw_gas, kw_plume = EXCLUDED.kw_plume, bronze_file = EXCLUDED.bronze_file,
+        bronze_sha256 = EXCLUDED.bronze_sha256, silver_processed_utc = EXCLUDED.silver_processed_utc,
+        updated_at = now()
+    WHERE volcano_notice.content_hash IS DISTINCT FROM EXCLUDED.content_hash
+    RETURNING record_id, source_id, (xmax = 0) AS is_new)
+INSERT INTO changed SELECT * FROM up"""],
+
     "quarantine": ["""
 INSERT INTO rejected_record (run_id, source_id, reason, payload, bronze_file, silver_processed_utc)
 SELECT s.run_id, src.source_id, s.reason, s.payload::jsonb, s.bronze_file, s.processed_utc
@@ -453,10 +512,11 @@ FROM stage s LEFT JOIN source src ON src.source_id = s.source_id"""],
 # --------------------------------------------------------------------------- database side
 
 def ensure_schema(cur) -> None:
-    cur.execute("SELECT to_regclass('public.silver_load_file'), to_regclass('public.volcano_update')")
+    cur.execute("SELECT to_regclass('public.silver_load_file'), to_regclass('public.volcano_update'), "
+                "to_regclass('public.volcano_notice')")
     if None in cur.fetchone():
-        raise SchemaMissing("project database is missing loader tables: apply sql/002_silver_indicators.sql "
-                            "and sql/003_loader_state.sql (see docs/database_handoff.md)")
+        raise SchemaMissing("project database is missing loader tables: run `docker compose up -d db-migrate` "
+                            "(applies sql/*.sql, see docs/database_handoff.md)")
 
 
 def loaded_files(cur) -> set[str]:
@@ -604,6 +664,12 @@ def load_pending(silver_dir: Path, cfg: dict, mode: str = "incremental", conn=No
                 break
             log.info(json.dumps({"event": "db_load_file", **result}))
             summary["loaded"].append(result)
+        grouped = {"earthquakes", "eruptions", "alert_notices"}
+        if any(r.get("status") == "loaded" and t in grouped
+               for (t, _, _), r in zip(todo, summary["loaded"])):
+            from .event_groups import rebuild_event_groups
+
+            summary["event_groups"] = rebuild_event_groups(conn, cfg)
     finally:
         if own:
             conn.close()

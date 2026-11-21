@@ -24,6 +24,7 @@ Volcanic activity: unrest and eruptions of the volcanoes of the **United States*
 | `gvp_volcanoes`, `gvp_eruptions` | Smithsonian GVP *Volcanoes of the World* (WFS) | historical | GeoJSON | Cite the database version and DOI (v5.4.0, 7 Aug 2026, doi:10.5479/si.GVP.VOTW5-2026.5.4) |
 | `usgs_fdsn` | USGS FDSN Event Web Service (ComCat) | historical (one-off backfill DAG) | GeoJSON (CSV in Workshop 1) | Public domain, credit USGS |
 | `usgs_hans` | USGS HANS public API (alert level + aviation colour code) | incremental (hourly) | JSON | Public domain, credit USGS Volcano Hazards Program |
+| `usgs_hans_notices` | USGS HANS notice search: full text of every notice since 2010 (Workshop 3 text corpus) | historical backfill (`bronze_backfill_hans_notices`) + incremental from a watermark (hourly) | JSON | Public domain, credit USGS Volcano Hazards Program |
 | `usgs_feed` | USGS real-time GeoJSON feed `all_week` | incremental (minutes) | GeoJSON | Public domain, credit USGS |
 | `usgs_volcano_updates` | USGS Volcano Updates page (**web scraping**, BeautifulSoup) | incremental (hourly) | HTML → JSON records | Public domain, credit USGS Volcano Hazards Program |
 | `gvp_weekly_rss` | Smithsonian / USGS Weekly Volcanic Activity Report | optional (weekly context) | RSS XML | Cite GVP Weekly Report |
@@ -150,7 +151,7 @@ To reprocess Silver from the Bronze files, pause the DAGs and delete everything 
 
 ### 7. Project database (PostgreSQL + PostGIS)
 
-`docker compose up -d` also starts the `project-db` service. On its first start it creates the schema from `sql/` (`001_schema_draft.sql`, `002_silver_indicators.sql` with the Silver quality flags, lineage columns, the `volcano_update` table and the `silver_quality_indicators` view, and `003_loader_state.sql` with the list of Silver files already loaded).
+`docker compose up -d` also starts the `project-db` service and then `db-migrate`, which applies every `sql/*.sql` that is new or changed (`001` base schema, `002` Silver quality flags, lineage, `volcano_update` and the `silver_quality_indicators` view, `003` list of loaded Silver files, `004` Workshop 3 sources, `005` table `volcano_notice` with the HANS notice texts, `006` documents why `activity_report` is empty) and records it in `schema_migration`. SQL files must be idempotent; details in [`docs/database_handoff.md`](docs/database_handoff.md).
 
 The last task of the `silver_processing` DAG (`load_to_database`) loads every new Silver file into the database: one transaction per file with the upserts, the `ingestion_run` row and the watermark in `ingestion_state`. To load what is already on disk without Airflow (for example the first time):
 
@@ -165,6 +166,23 @@ docker compose exec project-db psql -U volcano -d volcano -c "\dt"
 ```
 
 Connect from pgAdmin, DBeaver or any SQL client: host `localhost`, port `POSTGRES_PORT` (5432, or 5433 if a local PostgreSQL already uses 5432), database `volcano`, user `volcano`, password `POSTGRES_PASSWORD` from `.env`. Step by step, how to apply schema changes and next steps: [`docs/database_handoff.md`](docs/database_handoff.md).
+
+### 8. Gold layer (PySpark, Workshop 3)
+
+The `gold_processing` DAG runs every Monday at 03:00 UTC (or *Trigger DAG* in the UI). It reads each Silver topic folder with `spark.read.parquet("datalake_silver/<topic>/")` in local mode and writes `datalake_gold/governance_YYYYMMDD_HHMMSS.parquet` and `datalake_gold/storytelling_YYYYMMDD_HHMMSS.parquet`. Both use one long format (`section, metric, dimension, period, value, unit, generated_utc`, see `src/volcano_pipeline/gold/contract.py`); to add a KPI or an aggregation, add a function to `gold/governance.py` or `gold/storytelling.py` (step by step: [`workshop_3/handoff_parts_2_3.md`](workshop_3/handoff_parts_2_3.md)). Work split: [`workshop_3/plan.md`](workshop_3/plan.md); Part 1 report notes: [`workshop_3/pipeline_improvements.md`](workshop_3/pipeline_improvements.md).
+
+* Spark runs inside the Airflow image (Java 17 + PySpark 3.5.4). Give Docker Desktop about **6 GB of memory**; the Spark driver uses `SPARK_DRIVER_MEMORY` (1g by default).
+* Since Workshop 3 each Silver topic has its own folder (`datalake_silver/earthquakes/`...). A clone with Workshop 2 data moves its files once with `python scripts/migrate_silver_layout.py` (DAGs paused).
+* Spark tests need Java 8/11/17. On the host they are skipped when Java does not fit; run everything inside the image:
+
+* **After every `git pull` that touches `airflow/Dockerfile` or a requirements file, run `docker compose up -d --build`.** Restarting Docker Desktop brings the old containers back with the old image (seen on 2026-11-19: `load_to_database` failed with `No module named 'psycopg'`).
+* New SQL files (`sql/00N_*.sql`) are applied by the `db-migrate` service on the next `docker compose up -d`; nothing to run by hand.
+
+```bash
+docker compose up -d --build                                      # after pulling (new Java/PySpark layers)
+docker compose run --rm airflow-scheduler airflow dags test gold_processing   # one full Gold run
+docker compose run --rm airflow-scheduler python -m pytest -q               # all tests, Spark included
+```
 
 ### Troubleshooting
 
@@ -195,7 +213,7 @@ Connect from pgAdmin, DBeaver or any SQL client: host `localhost`, port `POSTGRE
 ├── docker-compose.yml         # Airflow stack + PostGIS project database
 ├── datalake_bronze/ datalake_silver/ datalake_gold/   # data lake layers (git-ignored)
 ├── data/raw/                  # raw landing zone (git-ignored)
-├── sql/                       # DDL (001 draft, 002 Silver indicators, 003 loader state), loaded by the project-db container
+├── sql/                       # DDL 001-006, applied by the db-migrate service (scripts/db_migrate.sh)
 ├── dashboard/                 # Dash app (Workshop #4)
 ├── tests/ and tests/fixtures/ # pytest + recorded responses
 ├── notebooks/01_source_profiling.ipynb, 02_silver_exploration.ipynb
