@@ -52,7 +52,9 @@ def conform(df, generated: datetime):
         "period": F.to_date(F.col("period")) if "period" in df.columns else F.lit(None).cast("date"),
         "value": F.col("value").cast("double"),
         "unit": F.col("unit").cast("string") if "unit" in df.columns else F.lit(None).cast("string"),
-        "generated_utc": F.lit(generated.astimezone(timezone.utc).replace(tzinfo=None)).cast("timestamp"),
+        # keep the datetime aware: PySpark reads a naive datetime as local time, which shifted the
+        # stamp by the host's UTC offset outside Docker (e.g. +5 h in Colombia)
+        "generated_utc": F.lit(generated.astimezone(timezone.utc)).cast("timestamp"),
     }
     return df.select(*[cols[c].alias(c) for c in COLUMNS])
 
