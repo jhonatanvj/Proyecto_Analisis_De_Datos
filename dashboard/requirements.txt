@@ -1,0 +1,7 @@
+# Dependencies of the dashboard image only (dashboard/Dockerfile). The dashboards read the Gold
+# Parquet files with pandas, so they need no Spark, Airflow or database driver.
+dash>=4.0,<5
+plotly>=6.0
+dash-bootstrap-components>=2.0
+pandas>=2.1,<4
+pyarrow>=15.0

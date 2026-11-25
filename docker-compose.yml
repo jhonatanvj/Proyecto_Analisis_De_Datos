@@ -1,5 +1,6 @@
-# Local Airflow stack for the Bronze/Silver pipeline (Workshop 2).
-#   docker compose up -d --build      then open http://localhost:8080
+# Local stack: Airflow pipeline (Workshop 2-3), project database and the two dashboards (Workshop 4).
+#   docker compose up -d --build      then open http://localhost:8080 (Airflow),
+#   http://localhost:8050 (governance dashboard) and http://localhost:8051 (storytelling dashboard)
 # Based on the official Airflow 2.10 compose file, reduced to LocalExecutor: tasks run as
 # subprocesses of the scheduler, so no Celery worker or Redis is needed on one machine.
 
@@ -174,6 +175,27 @@ services:
       project-db:
         condition: service_healthy
     restart: "no"
+
+  # Workshop 4 dashboards. They read only the Gold Parquet files (mounted read-only), so they
+  # start without Airflow and show "no Gold data yet" until the gold_processing DAG has run.
+  #   governance:   http://localhost:8050      storytelling: http://localhost:8051
+  # If a port is taken on your machine, set GOVERNANCE_PORT / STORYTELLING_PORT in .env.
+  governance-dashboard: &dashboard-common
+    build: ./dashboard
+    image: volcano-dashboard
+    command: python -m dashboard.governance_app
+    ports:
+      - "${GOVERNANCE_PORT:-8050}:8050"
+    volumes:
+      - ./dashboard:/app/dashboard:ro
+      - ./datalake_gold:/app/datalake_gold:ro
+    restart: unless-stopped
+
+  storytelling-dashboard:
+    <<: *dashboard-common
+    command: python -m dashboard.storytelling_app
+    ports:                    # replaces the 8050 mapping inherited from the anchor
+      - "${STORYTELLING_PORT:-8051}:8051"
 
 volumes:
   airflow-metadata:
