@@ -40,8 +40,8 @@ None of these sources needs an API key. Full details (URLs, limits, watermarks, 
 | Historical earthquakes (FDSN, 2010 → today) | **ready**: `bronze_backfill_fdsn` DAG, run by hand once | `datalake_bronze/usgs_fdsn_*.json` → Silver `earthquakes_*` |
 | Silver (clean Parquet per topic + quarantine) | **running**: `silver_processing` DAG, FileSensor-triggered | `datalake_silver/<topic>_YYYYMMDD_HHMMSS.parquet` |
 | Project database (PostgreSQL + PostGIS, canonical model) | **loaded** from Silver by the `load_to_database` task of the Silver DAG and by `ingest.py` ([details](docs/database_handoff.md)) | service `project-db`, `sql/`, `src/volcano_pipeline/storage/loader.py` |
-| Gold (governance + analytical summaries, PySpark) | planned (Workshop #3) | `datalake_gold/` |
-| Dashboard (Plotly Dash, `localhost:8050`) | planned (Workshop #4) | `dashboard/` |
+| Gold (governance + analytical summaries, PySpark) | **running**: `gold_processing` DAG, weekly (or by hand) | `datalake_gold/governance_*.parquet`, `storytelling_*.parquet` |
+| Dashboards (Plotly Dash, read Gold only) | **in progress** (Workshop #4): governance `localhost:8050`, storytelling `localhost:8051` | `dashboard/` |
 
 ## Architecture
 
@@ -51,7 +51,8 @@ Medallion pipeline on Apache Airflow 2.10 (Docker Compose, LocalExecutor). The d
 sources (HANS, USGS feed, GVP WFS, USGS Volcano Updates page)
    -> bronze_ingestion DAG (@hourly: extract -> validate -> persist)  -> datalake_bronze/*.json
    -> silver_processing DAG (FileSensor -> pandas preprocessing)     -> datalake_silver/*.parquet (+ quarantine/)
-   -> Gold with PySpark (Workshop 3) -> Dash dashboard (Workshop 4)
+   -> gold_processing DAG (weekly, PySpark)                          -> datalake_gold/{governance,storytelling}_*.parquet
+   -> Dash dashboards (pandas reads Gold only): governance :8050, storytelling :8051
 ```
 
 ## Getting started on your own machine
@@ -65,6 +66,8 @@ Everything below was tested on Windows 11 with Docker Desktop. It works the same
 | Git | any | clone the repository |
 | Docker Desktop (or Docker Engine + Compose v2) | Compose 2.24+ | the Airflow stack. Give Docker **at least 4 GB of RAM** (Settings → Resources) |
 | Python | 3.11 | tests, notebooks and the local runner (not needed just to run the DAGs) |
+
+**Windows:** keep the repository in a short folder (at most about 95 characters, e.g. `C:\devolcano`), or enable long paths once in an administrator PowerShell: `New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force`. Some JupyterLab files have very long names, and without this `pip install -r requirements.txt` stops with `OSError: [Errno 2] No such file or directory ... Windows Long Path support`.
 
 ### 2. Clone and configure
 
@@ -123,7 +126,7 @@ The first Bronze run downloads about 14 MB; after that, the GVP catalogue is fet
 python -m venv .venv
 .venv\Scripts\activate                # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-pytest -q                            # ~80 tests, no network needed
+python -m pytest -q                  # ~150 tests, no network; Spark tests skip unless Java 8/11/17
 jupyter notebook notebooks/02_silver_exploration.ipynb
 ```
 
@@ -184,17 +187,31 @@ docker compose run --rm airflow-scheduler airflow dags test gold_processing   # 
 docker compose run --rm airflow-scheduler python -m pytest -q               # all tests, Spark included
 ```
 
+### 9. Dashboards (Plotly Dash, Workshop 4)
+
+Two separate Dash apps read the latest Gold Parquet files with pandas, never Silver, the database or an API. `docker compose up -d --build` starts both with the rest of the stack; until the Gold DAG has run once they show "no Gold data yet".
+
+| App | Audience | URL | Start without Docker |
+|---|---|---|---|
+| Governance | data team: quality KPIs of the pipeline | http://localhost:8050 | `python -m dashboard.governance_app` |
+| Storytelling | emergency-management analyst: which volcanoes show unusual activity | http://localhost:8051 | `python -m dashboard.storytelling_app` |
+
+Both pick up a newer Gold file with the *Refresh data* button or on their own every 5 minutes. To start only the dashboards: `docker compose up -d --build governance-dashboard storytelling-dashboard`. Structure and how to add a chart: [`dashboard/README.md`](dashboard/README.md); work split: [`workshop_4/plan.md`](workshop_4/plan.md).
+
 ### Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `port is already allocated` on 8080 or 5432 | Another program uses the port. Stop it, or change the left side of `ports:` in `docker-compose.yml`. For 5432, set `POSTGRES_PORT` in `.env` |
+| `port is already allocated` on 8080, 5432, 8050 or 8051 | Another program uses the port. Stop it, or set `POSTGRES_PORT`, `GOVERNANCE_PORT` or `STORYTELLING_PORT` in `.env` (8080: change the left side of `ports:` in `docker-compose.yml`) |
 | Webserver keeps restarting, or the UI is very slow | Give Docker more memory (4 GB+) |
 | A DAG shows "Broken DAG" | `docker compose exec airflow-scheduler airflow dags list-import-errors` |
 | Task logs | UI → DAG → Grid → task → Logs, or the `airflow/logs/` folder |
 | `Permission denied` writing `datalake_*` (Linux) | Set `AIRFLOW_UID=$(id -u)` in `.env`, then `docker compose down && docker compose up -d` |
 | `pytest` fails on `airflow/logs/...` | Run it from the repo root, where `pytest.ini` limits collection to `tests/` |
 | Silver run is "skipped" | Normal: no new Bronze file in that hour (the sources did not change) |
+| Silver run stays "running" for up to 40 min | Normal: its sensor waits for a new Bronze file (checks every minute). Bronze runs on the hour, then Silver finishes in about 20 s |
+| `pip install` fails with `Windows Long Path support` | Move the repository to a shorter folder or enable long paths (see Prerequisites), then run `pip install -r requirements.txt` again |
+| Dashboard shows "no Gold data yet" | Trigger `gold_processing` in Airflow, then press *Refresh data* |
 | Apple Silicon: PostGIS image warning | `postgis/postgis` has no ARM image; it runs under emulation, which is fine for development |
 
 ## Repository structure
@@ -210,11 +227,11 @@ docker compose run --rm airflow-scheduler python -m pytest -q               # al
 │   ├── normalization/         # canonical mapping, geo helpers
 │   └── storage/               # raw landing zone, database connection and Silver -> PostgreSQL loader
 ├── airflow/                   # Dockerfile, requirements, dags/ (bronze_ingestion, silver_processing, bronze_backfill_fdsn)
-├── docker-compose.yml         # Airflow stack + PostGIS project database
+├── docker-compose.yml         # Airflow stack, PostGIS project database, both dashboards
 ├── datalake_bronze/ datalake_silver/ datalake_gold/   # data lake layers (git-ignored)
 ├── data/raw/                  # raw landing zone (git-ignored)
 ├── sql/                       # DDL 001-006, applied by the db-migrate service (scripts/db_migrate.sh)
-├── dashboard/                 # Dash app (Workshop #4)
+├── dashboard/                 # Dash apps (Workshop #4): governance_app.py (:8050), storytelling_app.py (:8051), common/
 ├── tests/ and tests/fixtures/ # pytest + recorded responses
 ├── notebooks/01_source_profiling.ipynb, 02_silver_exploration.ipynb
 ├── scripts/                   # fetch_samples.py (W1), run_pipeline_local.py, collect_w2_samples.py (W2)
