@@ -18,6 +18,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from dash import Dash, Input, Output
 
+from dashboard import indicator_panel
 from dashboard.common.gold import GoldSnapshot, load_gold
 from dashboard.common.layout import chart_card, header, last_updated_text, no_rows_figure, refresh_controls
 from dashboard.common.theme import CATEGORICAL, style_figure
@@ -56,12 +57,14 @@ def create_app(gold_folder: Path | None = None) -> Dash:
                 refresh_controls(),
                 # Part 3 (storytelling): narrative card, tone donut, tone trend, top keywords,
                 # API vs. scraping comparison, volume activity.
-                # Part 1: indicator panel (map, VAI ranking by region, historical vs. current).
                 dbc.Row(dbc.Col(chart_card("weekly-tone"), lg=12)),
+                # Part 1: Volcano Activity Indicator (map, ranking by region, history per volcano)
+                indicator_panel.layout(),
             ], fluid=True),
         ], fluid=True, className="px-0")
 
     app.layout = page
+    indicator_panel.register_callbacks(app, gold_folder)
 
     @app.callback(Output("last-updated", "children"), Output("weekly-tone", "figure"),
                   Input("refresh-button", "n_clicks"), Input("refresh-interval", "n_intervals"))

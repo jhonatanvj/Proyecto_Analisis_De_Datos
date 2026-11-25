@@ -24,6 +24,9 @@ ALERT_LEVEL_COLORS = {"NORMAL": "#009E73", "ADVISORY": "#F0E442", "WATCH": "#E69
 COLOR_CODE_COLORS = {"GREEN": "#009E73", "YELLOW": "#F0E442", "ORANGE": "#E69F00",
                      "RED": "#D55E00", "UNASSIGNED": UNASSIGNED}
 
+# Volcano Activity Indicator levels (LOW < 25 <= MODERATE < 50 <= ELEVATED < 75 <= HIGH)
+VAI_LEVEL_COLORS = {"LOW": "#009E73", "MODERATE": "#F0E442", "ELEVATED": "#E69F00", "HIGH": "#D55E00"}
+
 TEMPLATE = "volcano"
 FONT = "Segoe UI, Helvetica Neue, Arial, sans-serif"
 
@@ -52,6 +55,15 @@ def style_figure(fig: go.Figure, title: str, x_title: str, y_title: str, source:
     # placed in pixels under the x axis (not as a fraction of the plot), so it stays inside the
     # bottom margin whatever height a chart gets
     fig.add_annotation(text=f"Source: {source}", xref="paper", yref="paper", x=0, y=0, yshift=-55,
+                       xanchor="left", yanchor="top", showarrow=False,
+                       font={"size": 11, "color": "#666666"})
+    return fig
+
+
+def style_map(fig: go.Figure, title: str, source: str) -> go.Figure:
+    """Like style_figure for a map, which has no axes: template, title and the source note."""
+    fig.update_layout(template=TEMPLATE, title={"text": title}, margin={"l": 10, "r": 10, "t": 60, "b": 40})
+    fig.add_annotation(text=f"Source: {source}", xref="paper", yref="paper", x=0, y=0, yshift=-25,
                        xanchor="left", yanchor="top", showarrow=False,
                        font={"size": 11, "color": "#666666"})
     return fig

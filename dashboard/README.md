@@ -30,6 +30,7 @@ dashboard/
 │   └── layout.py        # header(), refresh_controls(), chart_card(), empty_figure()
 ├── governance_app.py    # create_app(), one figure builder per chart
 ├── storytelling_app.py
+├── indicator_panel.py   # VAI panel of the storytelling app: map, ranking by region, history per volcano
 ├── requirements.txt     # dependencies of the dashboard image only
 ├── Dockerfile           # python:3.11-slim; the code is mounted, not copied
 └── .dockerignore        # the build only sends requirements.txt
