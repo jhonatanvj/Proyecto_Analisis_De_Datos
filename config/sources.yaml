@@ -33,6 +33,38 @@ indicator:                            # Volcano Activity Indicator (VAI), prelim
   seismic_min_baseline_events: 20     # below this, seismic component = not available
   eruptive_decay_years: 25
   levels: {LOW: 0, MODERATE: 25, ELEVATED: 50, HIGH: 75}
+  # Workshop 4: S compares the earthquakes of the last seismic_window_days with every week since
+  # history_start (a Monday, as Spark weeks start on Monday), counting the weeks with no earthquake
+  history_start: "2010-01-04"
+  seismic_window_days: 7
+  # region filter of the VAI ranking (US6): the USGS observatory of the volcano (HANS volcano list),
+  # or its GVP subregion when HANS does not list it
+  regions:
+    observatories:
+      avo: Alaska
+      hvo: Hawaii & American Samoa
+      cvo: Cascades & Pacific Northwest
+      calvo: California
+      yvo: Yellowstone & Interior West
+      nmi: Northern Mariana Islands
+    subregions:
+      Aleutian Ridge Volcanic Arc: Alaska
+      Alaska Peninsula Volcanic Arc: Alaska
+      Northern Alaska-Bering Sea Volcanic Province: Alaska
+      Northern Cordilleran Volcanic Province: Alaska
+      Queen Charlotte Volcano Group: Alaska
+      Wrangell Volcanic Arc: Alaska
+      Hawaiian-Emperor Hotspot Volcano Group: Hawaii & American Samoa
+      Samoan Hotspot Volcano Group: Hawaii & American Samoa
+      High Cascades Volcanic Arc: Cascades & Pacific Northwest
+      Garibaldi Volcanic Arc: Cascades & Pacific Northwest
+      High Lava Plains Volcanic Province: Cascades & Pacific Northwest
+      Northeast Pacific Rifts Volcanic Province: Cascades & Pacific Northwest
+      California Coast Ranges Volcano Group: California
+      Gulf of California Rift Volcanic Province: California
+      Basin and Range Volcanic Province: Yellowstone & Interior West
+      Yellowstone-Snake River Hotspot Volcano Group: Yellowstone & Interior West
+      Mariana Volcanic Arc: Northern Mariana Islands
 
 sources:
 

@@ -424,5 +424,11 @@ AGGREGATIONS = [
 def build_storytelling(spark, silver: dict, generated: datetime):
     from .contract import conform, union_all
 
+    from ..config import load_config
+    from .indicator import build_indicator
+
     parts = [agg(spark, silver) for agg in AGGREGATIONS]
+    # Workshop 4: the Volcano Activity Indicator sections (vai_current, vai_weekly, volcano_map,
+    # eruption_history) travel in the storytelling file, which the storytelling dashboard reads
+    parts.append(build_indicator(spark, silver, generated, load_config()["indicator"]))
     return union_all(spark, [conform(p, generated) for p in parts if p is not None])

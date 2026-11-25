@@ -93,3 +93,17 @@ def test_volume_total_counts_every_topic(spark, silver_dir):
     assert rows["eruptions"] == len(pd.read_parquet(silver_dir / "eruptions"))
     assert set(rows) == {"volcanoes", "eruptions", "earthquakes", "alert_notices", "volcano_updates", "quarantine"}
     # notices: no file in the Workshop 2 samples, so the topic is absent, not an error
+
+
+def test_reader_merges_old_and_new_silver_schemas(spark, tmp_path):
+    """A topic folder can hold files written before and after a Silver column was added (Workshop 4
+    added end_time / is_continuing); the reader must keep the new columns whichever file Spark samples."""
+    from volcano_pipeline.gold.silver_reader import read_topic
+
+    folder = tmp_path / "datalake_silver" / "eruptions"
+    folder.mkdir(parents=True)
+    pd.DataFrame({"record_id": ["a"], "vnum": [1]}).to_parquet(folder / "eruptions_20261101_000000.parquet")
+    pd.DataFrame({"record_id": ["b"], "vnum": [2], "is_continuing": [True]}).to_parquet(
+        folder / "eruptions_20261125_000000.parquet")
+    df = read_topic(spark, tmp_path / "datalake_silver", "eruptions")
+    assert "is_continuing" in df.columns and df.count() == 2
