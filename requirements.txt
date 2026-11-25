@@ -1,8 +1,9 @@
 # Workshop 1 (profiling + sample download)
 requests>=2.31
 PyYAML>=6.0
-pandas>=2.1
-numpy>=1.26
+# tested with pandas 2.1-3.1 and numpy 1.26-2.4; the caps stop an untested major release
+pandas>=2.1,<4
+numpy>=1.26,<3
 matplotlib>=3.8
 jupyter>=1.0
 pytest>=8.0
@@ -15,9 +16,10 @@ psycopg[binary]>=3.1
 # Gold layer (Workshop 3). Spark 3.5 needs Java 8/11/17; on another Java, run the Spark
 # tests inside Docker: docker compose run --rm airflow-scheduler python -m pytest -q
 pyspark==3.5.4
-# Workshop 3+ (uncomment when used)
-# SQLAlchemy>=2.0
-# GeoAlchemy2>=0.14
-# dash>=2.16
-# plotly>=5.20
 vaderSentiment>=3.3.2
+# Workshop 4 dashboards (Plotly Dash); dashboard/requirements.txt lists what the dashboard Docker
+# image needs (these three plus pandas and pyarrow). Seaborn is for the notebooks and report figures.
+dash>=4.0,<5
+plotly>=6.0
+dash-bootstrap-components>=2.0
+seaborn>=0.13

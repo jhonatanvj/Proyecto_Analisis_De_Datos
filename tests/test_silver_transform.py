@@ -67,11 +67,60 @@ def test_eruptions_partial_bce_and_scope():
     assert row.loc[19729, "vei_missing"] and pd.isna(row.loc[19729, "vei"])
 
 
+def _eruption(number, **props):
+    base = {"Eruption_Number": number, "Volcano_Number": 332010, "StartDateYear": 2024, "StartDateMonth": 12,
+            "StartDateDay": 23}
+    return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-155.287, 19.421]},
+            "properties": base | props}
+
+
+def test_eruption_end_and_continuing_flag():
+    """GVP marks an eruption still going on with EndDateYearModifier '>' (continuing as of that date)."""
+    env = {"source_id": "gvp_eruptions", "payload": {"features": [
+        _eruption(1, EndDateYear=2026, EndDateMonth=3, EndDateDay=25, EndDateYearModifier=">"),
+        _eruption(2, EndDateYear=2024, EndDateMonth=6, EndDateDay=3, EndDateYearModifier=None),
+        _eruption(3),
+    ]}}
+    _, df, _ = TRANSFORMS["gvp_eruptions"](env, CTX)
+    row = df.set_index("eruption_number")
+    assert row.loc[1, "end_time"] == pd.Timestamp("2026-03-25", tz="UTC")
+    assert str(row.loc[1, "end_precision"]) == "day" and bool(row.loc[1, "is_continuing"]) is True
+    assert bool(row.loc[2, "is_continuing"]) is False and row.loc[2, "end_time"] == pd.Timestamp("2024-06-03", tz="UTC")
+    assert pd.isna(row.loc[3, "end_time"]) and str(row.loc[3, "end_precision"]) == "unknown"
+    assert bool(row.loc[3, "is_continuing"]) is False
+
+
 def test_volcanoes_unknown_year():
     topic, df, _ = TRANSFORMS["gvp_volcanoes"](VOLCANOES, CTX)
     assert topic == "volcanoes" and len(df) == 4
     assert df["last_eruption_year"].isna().sum() == 1
     assert df.loc[df["vnum"] == 332010, "elevation_m"].item() > 0
+
+
+HANS_VOLCANOES = {"source_id": "usgs_hans_volcanoes", "payload": json.loads(
+    (Path(__file__).parent / "fixtures" / "hans_notices" / "us_volcanoes.json").read_text(encoding="utf-8"))}
+
+
+def test_hans_volcanoes_by_vnum():
+    from volcano_pipeline.silver.transform import hans_volcanoes_by_vnum
+
+    by_vnum = hans_volcanoes_by_vnum(HANS_VOLCANOES)
+    assert by_vnum[332010] == {"observatory": "hvo", "region": "Hawaii"}
+    assert by_vnum[311120]["observatory"] == "avo"
+
+
+def test_volcanoes_take_observatory_and_region_from_hans():
+    from volcano_pipeline.silver.transform import hans_volcanoes_by_vnum
+
+    by_vnum = hans_volcanoes_by_vnum(HANS_VOLCANOES)
+    del by_vnum[244001]        # as for the 12 US volcanoes the real HANS list does not have
+    _, df, _ = TRANSFORMS["gvp_volcanoes"](VOLCANOES, CTX | {"hans_by_vnum": by_vnum})
+    row = df.set_index("vnum")
+    assert row.loc[332010, "observatory"] == "hvo" and row.loc[332010, "usgs_region"] == "Hawaii"
+    assert row.loc[332010, "subregion"] == "Hawaiian-Emperor Hotspot Volcano Group"
+    # without a HANS entry only the GVP subregion is known
+    assert pd.isna(row.loc[244001, "observatory"]) and pd.isna(row.loc[244001, "usgs_region"])
+    assert row.loc[244001, "subregion"] == "Samoan Hotspot Volcano Group"
 
 
 def test_volcano_updates_text():

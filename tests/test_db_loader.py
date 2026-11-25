@@ -1,6 +1,8 @@
 """Silver -> PostgreSQL loader. Row preparation is tested on the recorded Silver samples, with no
 database. The end-to-end test runs only when VOLCANO_TEST_DSN points to a disposable database
-that already has sql/001-003 applied (it is skipped otherwise, so pytest never needs a server)."""
+whose name ends in _test and that already has every sql/*.sql applied, e.g.
+`docker compose run --rm --no-deps -e PGDATABASE=volcano_test db-migrate`. It is skipped otherwise,
+so pytest never needs a server. The test empties the loaded tables first, so it can run again and again."""
 from __future__ import annotations
 
 import json
@@ -115,6 +117,24 @@ def test_py_values_turn_numpy_and_missing_values_into_python():
     assert loader.py_values(pd.Series(["a", np.nan], dtype="category")) == ["a", None]
 
 
+# Tables filled by sql/*.sql itself, not by the loader; they must survive the reset.
+_SEEDED_TABLES = {"source", "schema_migration", "spatial_ref_sys"}
+
+
+def _empty_loaded_tables(conn) -> None:
+    """Start from an empty database, as after db-migrate, so earlier runs cannot leak in: a
+    file name already in silver_load_file would be skipped and the second load would find nothing."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT current_database()")
+        name = cur.fetchone()[0]
+        if not name.endswith("_test"):
+            pytest.fail(f"VOLCANO_TEST_DSN points to {name!r}; it must be a disposable *_test database")
+        cur.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+        tables = sorted({row[0] for row in cur.fetchall()} - _SEEDED_TABLES)
+        cur.execute("TRUNCATE " + ", ".join(f'"{t}"' for t in tables) + " RESTART IDENTITY CASCADE")
+    conn.commit()
+
+
 @pytest.mark.skipif(not os.getenv("VOLCANO_TEST_DSN"), reason="needs a disposable PostGIS database")
 def test_loading_twice_creates_no_duplicates(tmp_path):
     import psycopg
@@ -123,6 +143,7 @@ def test_loading_twice_creates_no_duplicates(tmp_path):
 
     shutil.copytree(SILVER, tmp_path / "silver")
     with psycopg.connect(os.environ["VOLCANO_TEST_DSN"]) as conn:
+        _empty_loaded_tables(conn)
         first = loader.load_pending(tmp_path / "silver", load_config(), "historical", conn=conn)
         assert first["failed"] is None
         with conn.cursor() as cur:

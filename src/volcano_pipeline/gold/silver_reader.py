@@ -17,11 +17,15 @@ def topic_dir(silver_dir: Path, topic: str) -> Path:
 
 
 def read_topic(spark, silver_dir: Path, topic: str):
-    """All Silver files of one topic as one DataFrame, or None if the topic has no file yet."""
+    """All Silver files of one topic as one DataFrame, or None if the topic has no file yet.
+
+    mergeSchema: a folder can mix files written before and after a column was added (Workshop 4
+    added end_time / is_continuing to eruptions). Without it Spark takes the schema of one file and
+    the new columns can silently disappear."""
     folder = topic_dir(silver_dir, topic)
     if not any(folder.glob("*.parquet")):
         return None
-    return spark.read.parquet(str(folder))
+    return spark.read.option("mergeSchema", "true").parquet(str(folder))
 
 
 def latest(df):

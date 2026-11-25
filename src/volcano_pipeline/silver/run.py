@@ -21,7 +21,7 @@ import pandas as pd
 from ..normalization.canonical import content_hash
 from .io import topic_path, write_quarantine, write_topic
 from .state import filter_unseen, load_manifest, mark_processed, update_seen
-from .transform import TRANSFORMS, build_context, hans_volcano_map
+from .transform import TRANSFORMS, build_context, hans_volcano_map, hans_volcanoes_by_vnum
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +62,10 @@ def _latest_envelope(bronze_dir: Path, source_id: str) -> dict | None:
 def _context(bronze_dir: Path, radius_km: float, min_magnitude: float | None) -> dict:
     ctx = build_context(_latest_envelope(bronze_dir, "gvp_volcanoes"), radius_km, min_magnitude)
     # volcano code -> vnum / region for the HANS notice texts
-    ctx["hans_volcanoes"] = hans_volcano_map(_latest_envelope(bronze_dir, "usgs_hans_volcanoes"))
+    hans_list = _latest_envelope(bronze_dir, "usgs_hans_volcanoes")
+    ctx["hans_volcanoes"] = hans_volcano_map(hans_list)
+    # vnum -> observatory / region for the volcanoes topic (VAI region filter)
+    ctx["hans_by_vnum"] = hans_volcanoes_by_vnum(hans_list)
     return ctx
 
 

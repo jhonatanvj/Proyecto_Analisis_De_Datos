@@ -162,7 +162,9 @@ def alert_notices_from_hans(envelope: dict, ctx: dict) -> tuple[str, pd.DataFram
 
 
 def volcanoes_from_gvp(envelope: dict, ctx: dict) -> tuple[str, pd.DataFrame, list[dict]]:
+    """GVP volcanoes, with the USGS observatory and region from the HANS volcano list when it has them."""
     src, rows, rejects = envelope["source_id"], [], []
+    hans = ctx.get("hans_by_vnum") or {}
     for feat in (envelope.get("payload") or {}).get("features", []):
         p = feat.get("properties") or {}
         geom = (feat.get("geometry") or {}).get("coordinates") or [None, None]
@@ -178,6 +180,9 @@ def volcanoes_from_gvp(envelope: dict, ctx: dict) -> tuple[str, pd.DataFrame, li
             "last_eruption_year": pd.to_numeric(p.get("Last_Eruption_Year"), errors="coerce"),
             "elevation_m": p.get("Elevation"),
             "latitude": float(lat), "longitude": normalize_longitude(float(lon)),
+            "subregion": p.get("Subregion"),
+            "observatory": hans.get(p["Volcano_Number"], {}).get("observatory"),
+            "usgs_region": hans.get(p["Volcano_Number"], {}).get("region"),
         })
     return "volcanoes", enforce(pd.DataFrame(rows), "volcanoes"), rejects
 
@@ -194,12 +199,16 @@ def eruptions_from_gvp(envelope: dict, ctx: dict) -> tuple[str, pd.DataFrame, li
         if us_vnums and p["Volcano_Number"] not in us_vnums:
             continue        # the eruptions layer has no country field: scope by volcano number
         ts, precision = gvp_eruption_date(p.get("StartDateYear"), p.get("StartDateMonth"), p.get("StartDateDay"))
+        end_ts, end_precision = gvp_eruption_date(p.get("EndDateYear"), p.get("EndDateMonth"), p.get("EndDateDay"))
         vei = p.get("ExplosivityIndexMax")
         rows.append({
             "record_id": f"gvp_eruption:{p['Eruption_Number']}", "content_hash": content_hash(p),
             "eruption_number": p["Eruption_Number"], "vnum": p["Volcano_Number"],
             "start_time": ts, "time_precision": precision, "start_year": p.get("StartDateYear"),
             "vei": vei, "vei_missing": vei is None, "activity_type": p.get("Activity_Type"),
+            # GVP writes '>' before the end year of an eruption that was still going on at that date
+            "end_time": end_ts, "end_precision": end_precision,
+            "is_continuing": (p.get("EndDateYearModifier") or "").strip() == ">",
             "latitude": geom[1], "longitude": normalize_longitude(geom[0]) if geom[0] is not None else None,
         })
     return "eruptions", enforce(pd.DataFrame(rows), "eruptions"), rejects
@@ -239,6 +248,16 @@ def hans_volcano_map(envelope: dict | None) -> dict[str, dict]:
         code = (r.get("volcano_cd") or "").strip().lower()
         if code and valid_vnum(r.get("vnum")):
             out[code] = {"vnum": int(r["vnum"]), "name": r.get("volcano_name"), "region": r.get("region")}
+    return out
+
+
+def hans_volcanoes_by_vnum(envelope: dict | None) -> dict[int, dict]:
+    """vnum -> USGS observatory (avo, hvo, cvo, calvo, yvo, nmi) and region, from getUSVolcanoes."""
+    out = {}
+    for r in (envelope or {}).get("payload") or []:
+        if valid_vnum(r.get("vnum")):
+            out[int(r["vnum"])] = {"observatory": (r.get("obs_abbr") or "").strip().lower() or None,
+                                   "region": r.get("region")}
     return out
 
 

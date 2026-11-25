@@ -44,12 +44,16 @@ SCHEMAS: dict[str, pa.Schema] = {
         ("vnum", pa.int64()), ("name", pa.string()), ("country", pa.string()),
         ("primary_type", pa.string()), ("last_eruption_year", pa.int64()),
         ("elevation_m", pa.float64()), ("latitude", pa.float64()), ("longitude", pa.float64()),
+        # Workshop 4: region filter of the VAI ranking (USGS observatory first, GVP subregion as fallback)
+        ("subregion", pa.string()), ("observatory", pa.string()), ("usgs_region", pa.string()),
     ]),
     "eruptions": _schema([
         ("eruption_number", pa.int64()), ("vnum", pa.int64()), ("start_time", TS_US),
         ("time_precision", CAT), ("start_year", pa.int64()), ("vei", pa.int64()),
         ("vei_missing", pa.bool_()), ("activity_type", CAT),
         ("latitude", pa.float64()), ("longitude", pa.float64()),
+        # Workshop 4: the VAI needs to know whether an eruption is still going on
+        ("end_time", TS_US), ("end_precision", CAT), ("is_continuing", pa.bool_()),
     ]),
     "volcano_updates": _schema([
         ("record_type", CAT), ("observatory", CAT), ("volcano_name", pa.string()),
