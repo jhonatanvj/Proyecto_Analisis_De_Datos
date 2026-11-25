@@ -194,9 +194,11 @@ Two separate Dash apps read the latest Gold Parquet files with pandas, never Sil
 | App | Audience | URL | Start without Docker |
 |---|---|---|---|
 | Governance | data team: quality KPIs of the pipeline | http://localhost:8050 | `python -m dashboard.governance_app` |
-| Storytelling | emergency-management analyst: which volcanoes show unusual activity | http://localhost:8051 | `python -m dashboard.storytelling_app` |
+| Storytelling | emergency-management analyst: which volcanoes show unusual activity, with the Volcano Activity Indicator (map, ranking by region, history per volcano) | http://localhost:8051 | `python -m dashboard.storytelling_app` |
 
-Both pick up a newer Gold file with the *Refresh data* button or on their own every 5 minutes. To start only the dashboards: `docker compose up -d --build governance-dashboard storytelling-dashboard`. Structure and how to add a chart: [`dashboard/README.md`](dashboard/README.md); work split: [`workshop_4/plan.md`](workshop_4/plan.md).
+Both pick up a newer Gold file with the *Refresh data* button or on their own every 5 minutes. To start only the dashboards: `docker compose up -d --build governance-dashboard storytelling-dashboard`. Structure and how to add a chart: [`dashboard/README.md`](dashboard/README.md); work split: [`workshop_4/plan.md`](workshop_4/plan.md). The indicator's rules, parameters, validation and limitations: [`workshop_4/vai_indicator.md`](workshop_4/vai_indicator.md) and `notebooks/05_vai_validation.ipynb`; Silver/Gold changes made for it: [`workshop_4/integration_adjustments.md`](workshop_4/integration_adjustments.md).
+
+The Volcano Activity Indicator is a monitoring aid that compares each volcano with its own past; it is not an eruption forecast.
 
 ### Troubleshooting
 
@@ -233,7 +235,7 @@ Both pick up a newer Gold file with the *Refresh data* button or on their own ev
 ├── sql/                       # DDL 001-006, applied by the db-migrate service (scripts/db_migrate.sh)
 ├── dashboard/                 # Dash apps (Workshop #4): governance_app.py (:8050), storytelling_app.py (:8051), common/
 ├── tests/ and tests/fixtures/ # pytest + recorded responses
-├── notebooks/01_source_profiling.ipynb, 02_silver_exploration.ipynb
+├── notebooks/                 # 01 sources, 02 Silver, 03 data quality, 04 Gold preview, 05 VAI validation (Seaborn)
 ├── scripts/                   # fetch_samples.py (W1), run_pipeline_local.py, collect_w2_samples.py (W2)
 ├── docs/                      # ER diagram, architecture, W1 report, database_handoff.md
 ├── workshop_1/                # mapping, ingestion contract, samples, source status log

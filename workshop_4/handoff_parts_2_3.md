@@ -76,6 +76,7 @@ If a chart needs numbers Gold does not have yet, add a section in `src/volcano_p
 | `earthquakes_weekly` | 883 | `earthquakes` per week |
 | `earthquakes_baseline` | 1,311 | `weekly_count`, `baseline_p90`, `baseline_ratio` per volcano |
 | `alerts_breakdown` | 24 | volcanoes per observatory and alert level, per region and colour code |
+| `vai_current`, `vai_weekly`, `volcano_map`, `eruption_history` | added by Part 1 (Workshop 4) | Volcano Activity Indicator: score, level and components per volcano, weekly history since 2010, map attributes (`dimension` = `vnum|name|region|observatory`), eruptions since 1900. Shown by `dashboard/indicator_panel.py`; rules in [`vai_indicator.md`](vai_indicator.md) |
 
 ## 5. Who owns what
 
@@ -85,7 +86,7 @@ If a chart needs numbers Gold does not have yet, add a section in `src/volcano_p
 | 3: storytelling (8051) | `narrative-card`, `tone-donut`, `tone-trend`, `top-keywords`, `source-comparison`, `volume-activity` | records per tone label (escalating / stable / calming); records per week and source; the few numbers the narrative card quotes |
 | 1: indicator panel in 8051 | `volcano-map`, `vai-ranking`, `volcano-history` | `vai_current`, `vai_weekly`, `volcano_map` (Part 1 adds them) |
 
-Keep the example chart or replace it, your call. Part 1's indicator panel arrives as its own row in `storytelling_app.py`; leave a row for it below your story.
+Keep the example chart or replace it, your call. Part 1's indicator panel is already in `storytelling_app.py` as one row, `indicator_panel.layout()`, below the example chart; its callbacks live in `dashboard/indicator_panel.py`. Put your story above it and leave that row and the `register_callbacks` line as they are.
 
 ## 6. Checklist before the pull request (from the workshop)
 
