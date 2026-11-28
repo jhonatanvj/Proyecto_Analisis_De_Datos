@@ -410,6 +410,164 @@ def alerts_by_observatory_region(spark, silver: dict):
 
     return by_obs.unionByName(by_reg)
 
+def tone_distribution(spark, silver: dict):
+    """Breakdown of preprocessed notices by activity tone label (escalating / stable / calming)."""
+    from pyspark.sql import functions as F
+    from pyspark.sql import types as T
+    from .silver_reader import latest
+    from .tone import lexicon_score
+
+    notices = silver.get("notices")
+    if notices is None:
+        return None
+
+    lex_udf = F.udf(lexicon_score, T.DoubleType())
+    scored = (
+        latest(notices)
+        .where(F.col("summary_clean").isNotNull())
+        .withColumn("score", lex_udf(F.col("summary_clean")))
+        .withColumn(
+            "label",
+            F.when(F.col("score") > 0.15, F.lit("escalating"))
+            .when(F.col("score") < -0.15, F.lit("calming"))
+            .otherwise(F.lit("stable")),
+        )
+    )
+
+    counts = scored.groupBy("label").agg(F.count("*").cast("double").alias("records"))
+    total_row = counts.agg(F.sum("records").alias("tot")).first()
+    total = float(total_row["tot"]) if total_row and total_row["tot"] else 0.0
+    if total == 0.0:
+        return None
+
+    out_cnt = counts.select(
+        F.lit("tone_distribution").alias("section"),
+        F.lit("records").alias("metric"),
+        F.col("label").alias("dimension"),
+        F.col("records").alias("value"),
+        F.lit("records").alias("unit"),
+    )
+    out_pct = counts.select(
+        F.lit("tone_distribution").alias("section"),
+        F.lit("pct_records").alias("metric"),
+        F.col("label").alias("dimension"),
+        (F.col("records") * 100.0 / F.lit(total)).alias("value"),
+        F.lit("%").alias("unit"),
+    )
+    return out_cnt.unionByName(out_pct)
+
+
+def volume_by_source_weekly(spark, silver: dict):
+    """Weekly record volume per source (HANS API notices, scraped updates, FDSN earthquakes)."""
+    from pyspark.sql import functions as F
+    from .silver_reader import latest
+
+    frames = []
+    notices = silver.get("notices")
+    if notices is not None and "sent_time" in notices.columns:
+        frames.append(
+            latest(notices)
+            .where(F.col("sent_time").isNotNull())
+            .groupBy(F.date_trunc("week", "sent_time").alias("period"))
+            .agg(F.count("*").cast("double").alias("value"))
+            .withColumn("dimension", F.lit("usgs_hans_notices_api"))
+        )
+
+    updates = silver.get("volcano_updates")
+    if updates is not None:
+        ts_col = "issued_time" if "issued_time" in updates.columns else "processed_utc"
+        if ts_col in updates.columns:
+            frames.append(
+                latest(updates)
+                .where(F.col(ts_col).isNotNull())
+                .groupBy(F.date_trunc("week", ts_col).alias("period"))
+                .agg(F.count("*").cast("double").alias("value"))
+                .withColumn("dimension", F.lit("usgs_volcano_updates_scraping"))
+            )
+
+    eq = silver.get("earthquakes")
+    if eq is not None and "event_time" in eq.columns:
+        frames.append(
+            latest(eq)
+            .where(F.col("nearest_vnum").isNotNull() & F.col("event_time").isNotNull())
+            .groupBy(F.date_trunc("week", "event_time").alias("period"))
+            .agg(F.count("*").cast("double").alias("value"))
+            .withColumn("dimension", F.lit("usgs_earthquakes"))
+        )
+
+    if not frames:
+        return None
+
+    combined = frames[0]
+    for f in frames[1:]:
+        combined = combined.unionByName(f)
+
+    return combined.select(
+        F.lit("volume_activity").alias("section"),
+        F.lit("records").alias("metric"),
+        "dimension",
+        "period",
+        "value",
+        F.lit("records").alias("unit"),
+    )
+
+
+def narrative_highlights(spark, silver: dict):
+    """Key summary figures quoted by the functional-user narrative card."""
+    from pyspark.sql import functions as F
+    from pyspark.sql import types as T
+    from .silver_reader import latest
+    from .tone import lexicon_score
+
+    rows = []
+    notices = silver.get("notices")
+    if notices is not None and "sent_time" in notices.columns and "summary_clean" in notices.columns:
+        lex_udf = F.udf(lexicon_score, T.DoubleType())
+        df = (
+            latest(notices)
+            .where(F.col("sent_time").isNotNull() & F.col("summary_clean").isNotNull())
+            .withColumn("period", F.date_trunc("week", "sent_time"))
+            .withColumn("lex", lex_udf(F.col("summary_clean")))
+        )
+        weeks = [r["period"] for r in df.select("period").distinct().orderBy(F.desc("period")).limit(2).collect()]
+        if weeks:
+            latest_w = weeks[0]
+            curr_mean = df.where(F.col("period") == latest_w).agg(F.avg("lex")).first()[0]
+            if curr_mean is not None:
+                rows.append(("latest_week_tone", "ALL", latest_w, float(curr_mean), "score"))
+            if len(weeks) > 1:
+                prev_mean = df.where(F.col("period") == weeks[1]).agg(F.avg("lex")).first()[0]
+                if curr_mean is not None and prev_mean is not None:
+                    rows.append(("tone_wow_delta", "ALL", latest_w, float(curr_mean - prev_mean), "score"))
+
+            name_col = "volcano_name" if "volcano_name" in df.columns else "vnum"
+            top_v = (
+                df.where((F.col("period") == latest_w) & F.col(name_col).isNotNull())
+                .groupBy(F.col(name_col).cast("string").alias("vlabel"))
+                .agg(F.avg("lex").alias("mean_lex"))
+                .orderBy(F.desc("mean_lex"))
+                .first()
+            )
+            if top_v and top_v["mean_lex"] is not None:
+                rows.append(("top_escalating_volcano", str(top_v["vlabel"]), latest_w, float(top_v["mean_lex"]), "score"))
+
+    alerts = silver.get("alert_notices")
+    if alerts is not None and "alert_level_ord" in alerts.columns:
+        elev = latest(alerts).where(F.col("alert_level_ord") >= 2).select("vnum").distinct().count()
+        rows.append(("elevated_volcanoes_count", "ALL", None, float(elev), "volcanoes"))
+
+    if not rows:
+        return None
+
+    schema = "metric string, dimension string, period timestamp, value double, unit string"
+    return spark.createDataFrame(rows, schema=schema).select(
+        F.lit("narrative_highlights").alias("section"),
+        "metric",
+        "dimension",
+        "period",
+        "value",
+        "unit",
+    )
 
 AGGREGATIONS = [
     earthquakes_weekly,
@@ -418,6 +576,9 @@ AGGREGATIONS = [
     api_vs_scraping_comparison,
     earthquakes_vs_baseline,
     alerts_by_observatory_region,
+    tone_distribution,
+    volume_by_source_weekly,
+    narrative_highlights,
 ]
 
 
