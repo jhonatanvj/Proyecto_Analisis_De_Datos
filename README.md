@@ -74,7 +74,6 @@ Everything below was tested on Windows 11 with Docker Desktop. It works the same
 ```bash
 git clone https://github.com/jhonatanvj/Proyecto_Analisis_De_Datos.git
 cd Proyecto_Analisis_De_Datos
-git checkout workshop-2              # until it is merged into main
 cp .env.example .env                 # Windows PowerShell: Copy-Item .env.example .env
 ```
 

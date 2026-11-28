@@ -90,15 +90,217 @@
 
 %==============================================================================
 \section{Executive summary}\label{sec:summary}
-\pending{Part 1 (Jhonatan)}{workshop_4/plan.md, Part 1 item 8}
+
+Workshops 1--3 built a medallion pipeline for the volcanoes of the United States: Airflow DAGs land
+the USGS (HANS alert notices, earthquake feed and FDSN history, Volcano Updates page) and Smithsonian GVP
+(volcanoes, eruptions) data in Bronze, clean and deduplicate it in Silver, and PySpark writes two Gold
+Parquet files, one for data governance and one for storytelling. Workshop~4 puts that Gold layer in front
+of its two audiences with two Plotly Dash applications that read \emph{only} the newest Gold files:
+
+\begin{itemize}
+  \item \textbf{Governance dashboard} (\texttt{localhost:8050}, Section~\ref{sec:governance}) for the
+        data team: nine quality KPIs against thresholds stored in \texttt{config/sources.yaml}, null and
+        outlier rates per field, weekly volume per source and a data-health table per source.
+  \item \textbf{Storytelling dashboard} (\texttt{localhost:8051}, Section~\ref{sec:storytelling}) for
+        the emergency-management analyst: the activity tone of the USGS notices, the most frequent terms,
+        API versus scraping, and the \emph{Volcano Activity Indicator} (VAI) panel.
+\end{itemize}
+
+The VAI (Section~\ref{sec:vai}) is the project's indicator: a 0--100 score per volcano that mixes the
+official USGS alert level, the seismicity of the last seven days against the volcano's own weekly
+history since 2010, and its eruptive state. On the 47 US eruptions since 2010 it was ELEVATED or higher
+in the four weeks before the start of 52\,\% of them, with a false-alarm rate of 0.14 per quiet week
+(0.06 for its four-week average). It is a monitoring aid, not an eruption forecast; the dashboard says so
+next to it.
+
+To feed the dashboards, Silver gained the end and the ``still going on'' flag of each eruption and the
+USGS region of each volcano, and Gold reads Silver with a merged schema (Section~\ref{sec:integration}).
+Both dashboards and the whole pipeline start with one \texttt{docker compose up}
+(Section~\ref{sec:reproducibility}).
 
 %==============================================================================
 \section{Integration adjustments}\label{sec:integration}
-\pending{Part 1 (Jhonatan)}{workshop_4/integration_adjustments.md}
+
+The changes below were needed so the dashboards show accurate and complete data. They are kept apart
+from the Workshop~3 pipeline improvements, as the workshop asks
+(\texttt{workshop\_3/pipeline\_improvements.md}); the full notes are in
+\texttt{workshop\_4/integration\_adjustments.md}.
+
+\subsection{Silver eruptions: end date and continuing eruptions}
+\textbf{Found:} the VAI gives an eruptive component of 1 to a volcano whose eruption is still going on,
+but Silver kept only the start of each eruption. The GVP Bronze file has the end
+(\texttt{EndDateYear/Month/Day}) and marks an eruption still going on at its last update with
+\texttt{EndDateYearModifier = ">"} (for example Kilauea since 2024-12-23 and Great Sitkin since
+2021-05-25).
+
+\noindent\textbf{Change:} three new columns written by \texttt{eruptions\_from\_gvp}:
+\begin{center}
+\begin{tabular}{L{2.6cm}L{2.6cm}L{8.4cm}}
+\toprule
+\textbf{Column} & \textbf{Type} & \textbf{Meaning}\\
+\midrule
+\texttt{end\_time} & timestamp (UTC) & end of the eruption, first day of the known period; null when unknown\\
+\texttt{end\_precision} & category & \texttt{day} / \texttt{month} / \texttt{year} / \texttt{unknown}, like \texttt{time\_precision}\\
+\texttt{is\_continuing} & bool & true when GVP wrote \texttt{>} before the end year\\
+\bottomrule
+\end{tabular}
+\end{center}
+A missing end date alone does not mean ``ongoing'': 6,602 of the 11,089 GVP eruptions have none, almost
+all of them old eruptions whose end is unknown. Only the \texttt{>} marker is read as continuing.
+
+\subsection{Silver volcanoes: observatory and region}
+\textbf{Found:} the VAI ranking must be filterable by region (user story US6: Alaska, Hawaii,
+Cascades\ldots), but Silver \texttt{volcanoes} had no region.
+
+\noindent\textbf{Change:} \texttt{subregion} (GVP, all 165 volcanoes), \texttt{observatory} and
+\texttt{usgs\_region} (HANS volcano list, 153 of the 165). The dashboard shows the observatory group
+(\texttt{indicator.regions} in \texttt{sources.yaml}), or the GVP subregion mapped to the same groups for
+the 12 volcanoes HANS does not list. Every volcano gets one of six regions; none falls into ``Other''.
+
+\subsection{Gold storytelling: four indicator sections}
+\texttt{gold/indicator.py} adds \texttt{vai\_current}, \texttt{vai\_weekly}, \texttt{volcano\_map} and
+\texttt{eruption\_history} to the storytelling file without changing the Gold contract. Two problems were
+found while testing it:
+\begin{itemize}
+  \item GVP eruptions go back to year 1 and pandas cannot hold nanosecond timestamps before 1677, so
+        collecting them from Spark failed with \texttt{OutOfBoundsDatetime}. Dropping old eruptions would
+        change the result (a volcano that last erupted in 1510 has an eruptive component close to 0 but
+        \emph{available}, which changes how the weights are shared), so the times now leave Spark as
+        seconds since 1970.
+  \item GVP day-precision dates fall on 00:00 UTC, and an eruption starting on a Monday was also counted
+        in the week before (9 of the 47 US eruptions since 2010). Weeks are now half-open: Monday 00:00
+        included, next Monday excluded.
+\end{itemize}
+
+\subsection{Gold reads Silver with \texttt{mergeSchema}}
+\texttt{spark.read.parquet(folder)} takes the schema of one file. After a Silver column is added, a
+folder holds files with and without it, and the new column could silently disappear from Gold.
+\texttt{read\_topic} now reads each topic folder with \texttt{mergeSchema}.
+
+\subsection{Applying them to an existing data lake}
+Silver rewrites a record only when its source content changes, so the existing GVP rows are not rewritten
+by later runs. On a data lake older than these changes the two GVP topics are rebuilt once with
+\texttt{scripts/reprocess\_silver\_source.py gvp\_volcanoes} and \texttt{gvp\_eruptions} (with
+\texttt{silver\_processing} paused), and then Gold is run again. A fresh clone needs nothing extra.
+
+Each change has a regression test (\texttt{test\_eruption\_before\_1677\_still\_counts},
+\texttt{test\_eruption\_starting\_on\_a\_monday\_does\_not\_reach\_the\_week\_before},
+\texttt{test\_reader\_merges\_old\_and\_new\_silver\_schemas}, plus the Silver transform tests).
 
 %==============================================================================
 \section{Volcano Activity Indicator}\label{sec:vai}
-\pending{Part 1 (Jhonatan)}{workshop_4/vai_indicator.md and notebooks/05_vai_validation.ipynb}
+
+The VAI is a 0--100 score per US volcano that says how active the volcano looks \emph{compared with its
+own past}. It is a monitoring aid for the emergency-management analyst, \textbf{not an eruption
+forecast}: official alert levels come from the USGS volcano observatories. Rules are in
+\texttt{gold/vai\_rules.py}, the PySpark job in \texttt{gold/indicator.py}, every parameter in the
+\texttt{indicator} block of \texttt{config/sources.yaml}, and the validation in
+\texttt{notebooks/05\_vai\_validation.ipynb}.
+
+\subsection{Formula}
+\[
+\mathrm{VAI} = 100\cdot\frac{w_R R + w_S S + w_H H}{\sum \text{weights of the available components}}
+\]
+
+\begin{longtable}{L{2.4cm}L{9.2cm}L{2.4cm}}
+\toprule
+\textbf{Component} & \textbf{Rule} & \textbf{Weight}\\
+\midrule\endhead
+$R$, reported activity & Latest USGS HANS alert level: NORMAL 0, ADVISORY 0.4, WATCH 0.7, WARNING 1.0.
+  Not available when the volcano has no HANS notice. & 0.45\\
+$S$, seismic anomaly & Earthquakes $M\ge 1.0$ within 30\,km in the last 7 days, compared with every complete
+  week since 2010-01-04, \emph{weeks without earthquakes included}. Mid-rank percentile
+  $p = (\text{weeks below} + \tfrac12\,\text{weeks equal})/\text{weeks}$; $S=\max(0,(p-0.5)/0.5)$.
+  Not available below 20 earthquakes in the baseline. & 0.35\\
+$H$, eruptive state & 1 while an eruption is going on (GVP \texttt{>} marker) or in a week an eruption
+  overlaps; otherwise $e^{-\Delta t/25}$ with $\Delta t$ the years since the last eruption ended.
+  Not available without a dated eruption. & 0.20\\
+\bottomrule
+\end{longtable}
+
+\noindent Levels: LOW $<25\le$ MODERATE $<50\le$ ELEVATED $<75\le$ HIGH. A component that is not
+available is left out and the other weights are shared again; the dashboard lists which components each
+volcano used (US8).
+
+\subsection{Decisions made while implementing it}
+\begin{itemize}
+  \item \textbf{Zero weeks in the baseline, mid-rank percentile.} Most volcanoes are silent most weeks.
+        Without the zero weeks a volcano with no earthquake at all would get $S$ close to 1; with them,
+        no earthquake now gives $p\le 0.5$ and $S=0$. The current week is not in the baseline because it
+        is not over.
+  \item \textbf{Weekly history from $S$ and $H$ only.} HANS keeps no past alert levels, so $R$ cannot be
+        rebuilt for past weeks (US7).
+  \item \textbf{Four-week average in the history chart.} One earthquake in a usually silent week already
+        looks unusual; the average is easier to read and halves the false alarms.
+  \item \textbf{No weekly-report bonus.} The optional GVP weekly RSS was never ingested, so the
+        +0.2 / +0.1 bonus of the Workshop~1 design is not applied.
+\end{itemize}
+
+\subsection{What Gold holds}
+\begin{center}
+\begin{tabular}{L{3.0cm}L{3.4cm}L{7.2cm}}
+\toprule
+\textbf{Section} & \textbf{Rows (2026-11-25)} & \textbf{Content}\\
+\midrule
+\texttt{vai\_current} & 1,144 (143 volcanoes) & score, level, $R$, $S$, $H$ (null = not available), components used, earthquakes in the window, baseline percentile\\
+\texttt{vai\_weekly} & 338,304 & score, $S$, $H$ per Monday since 2010 for 128 volcanoes\\
+\texttt{volcano\_map} & 660 (165 volcanoes) & coordinates, current alert level and aviation colour code\\
+\texttt{eruption\_history} & 918 & VEI and continuing flag of each eruption since 1900\\
+\bottomrule
+\end{tabular}
+\end{center}
+22 of the 165 volcanoes have no VAI: no HANS notice, fewer than 20 baseline earthquakes and no dated
+eruption.
+
+\subsection{Validation}
+44 of the 47 US eruptions since 2010 happened at a volcano with a seismic baseline. Threshold: VAI
+$\ge 50$ (ELEVATED). A false alarm is a week more than 8 weeks away from any eruption with VAI $\ge 50$.
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Signal} & \textbf{Hit ($\pm$4 weeks)} & \textbf{Early hit (4 weeks before)} & \textbf{False-alarm rate}\\
+\midrule
+Weekly VAI & 0.70 & 0.52 & 0.14\\
+$S$ alone & 0.68 & 0.52 & 0.17\\
+4-week average VAI & 0.50 & 0.36 & 0.06\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{itemize}
+  \item The Workshop~1 hit definition (before \emph{or after} the start) is partly circular, because $H=1$
+        from the start week on. The early hit rate is the honest measure; at the default weights it equals
+        $S$ alone, so the early signal comes from the earthquakes.
+  \item \textbf{Case studies} (Figure~\ref{fig:vai_case_studies.png}): Kilauea (summit eruption of
+        2020-12-20), Mauna Loa (2022-11-27, months of rising seismicity before) and Great Sitkin
+        (2021-05-25) were ELEVATED or HIGH before the start. Ahyi (2025-10-20), a submarine volcano with
+        sparse seismic coverage, was missed ($S=0$). Kilauea 2018 cannot be tested: GVP counts it as the
+        end of the 1983--2018 eruption, which started before the baseline.
+  \item \textbf{Weights} (Figure~\ref{fig:vai_weight_sensitivity.png}): giving $H$ more than half of the
+        weight raises the early hit rate to 0.82--0.89, but only because frequently erupting volcanoes keep
+        $H$ near 1 for years and sit at ELEVATED most of the time. An equal split of $S$ and $H$ gives
+        fewer false alarms (0.12 against 0.14) with almost the same early hit rate (0.50 against 0.52).
+        The Workshop~1 weights are kept; the equal split is the alternative to discuss. At the HIGH
+        threshold the false-alarm rate stays near 0.05 for any weight.
+\end{itemize}
+
+\shot{vai_hits_false_alarms.png}{0.85}{Hit, early-hit and false-alarm rates of the VAI around the US eruptions since 2010.}
+\shot{vai_case_studies.png}{0.95}{Weekly VAI and its four-week average around four US eruptions.}
+\shot{vai_weight_sensitivity.png}{0.8}{Early hit and false-alarm rates when the seismic share of the weight changes.}
+
+\subsection{Limitations}
+\begin{itemize}
+  \item The weekly $S$ is in-sample: each past week is compared with the whole 2010--present history.
+        The current $S$ uses only past weeks.
+  \item Earthquakes go to the nearest volcano within 30\,km; in clustered fields (Aleutians, Cascades) a
+        swarm under one volcano can raise its neighbour too.
+  \item Volcanoes with sparse networks (submarine, Northern Mariana Islands) rarely reach 20 baseline
+        earthquakes, so their VAI rests on $R$ and $H$.
+  \item With only one component available, renormalisation gives it the whole weight, so a few
+        unmonitored Alaska volcanoes with one or two recent earthquakes top the ranking. The ranking draws
+        those single-input scores lighter and its hover gives the number of inputs.
+\end{itemize}
 
 %==============================================================================
 \section{Governance dashboard documentation}\label{sec:governance}
@@ -296,7 +498,42 @@ the main ones.
 
 %==============================================================================
 \section{Reproducibility evidence}\label{sec:reproducibility}
-\pending{Part 1 (Jhonatan)}{Airflow screenshots of the three DAGs, both dashboards in a browser, README setup}
+
+\subsection{Setup from a fresh clone}
+The README (\emph{Getting started on your own machine}) lists every step; in short:
+\begin{enumerate}
+  \item Prerequisites: Git, Docker Desktop with at least 4\,GB of RAM (5\,GB recommended for the Gold
+        job), Python 3.11 for the tests and notebooks. On Windows, a repository path under about 95
+        characters or long paths enabled.
+  \item \texttt{git clone https://github.com/jhonatanvj/Proyecto\_Analisis\_De\_Datos.git}, then
+        \texttt{cp .env.example .env} and set \texttt{HTTP\_USER\_AGENT} (USGS and GVP ask clients to
+        identify themselves). \texttt{.env} is git-ignored.
+  \item \texttt{docker compose up -d --build} starts Airflow (\texttt{localhost:8080}), the PostGIS
+        project database with its migrations, and both dashboards (\texttt{localhost:8050} and
+        \texttt{8051}).
+  \item In Airflow, unpause \texttt{bronze\_ingestion} (hourly) and \texttt{silver\_processing}
+        (minute 15); run \texttt{bronze\_backfill\_fdsn} once for the earthquake history since 2010;
+        trigger \texttt{gold\_processing} (weekly, Monday 03:00 UTC) or run it with
+        \texttt{airflow dags test gold\_processing}.
+  \item Press \emph{Refresh data} in either dashboard, or wait up to five minutes, to read the new Gold
+        files.
+\end{enumerate}
+
+\subsection{Checks}
+\begin{itemize}
+  \item A fresh clone into a short path, with a new virtual environment, installs
+        \texttt{requirements.txt} and passes the test suite. On the host, the 32 Spark tests are skipped
+        (Java 25 is not supported by Spark 3.5); they run inside the Airflow container, which has Java 17.
+        % TODO update the counts after the final end-to-end run (host: 185 passed, 32 skipped on 2026-11-27)
+  \item Library versions are bounded below the next major release (\texttt{pandas<4}, \texttt{numpy<3},
+        \texttt{dash<5}), and the suite passes with the newest pandas 3 release.
+\end{itemize}
+
+\shot{airflow_dags_w4.png}{0.95}{Airflow: the Bronze, Silver and Gold DAGs after the end-to-end run.}
+\shot{airflow_gold_grid_w4.png}{0.95}{Airflow: grid of the \texttt{gold\_processing} run that wrote the Gold files shown in the dashboards.}
+\shot{governance_dashboard.png}{0.95}{Governance dashboard at \texttt{localhost:8050}.}
+\shot{storytelling_dashboard.png}{0.95}{Storytelling dashboard at \texttt{localhost:8051}.}
+\shot{storytelling_vai_panel.png}{0.95}{Volcano Activity Indicator panel: map, ranking by region and history of one volcano.}
 
 %==============================================================================
 \section*{References}
