@@ -38,7 +38,7 @@ def test_page_load_reads_gold_written_after_the_app_started(module, tmp_path):
 
 def test_records_per_topic_figure(gold_folder):
     fig = governance_app.records_per_topic_figure(load_gold("governance", gold_folder))
-    assert fig.layout.xaxis.title.text == "Records" and len(fig.data[0].y) == 2
+    assert fig.layout.xaxis.title.text == "Records (log scale)" and len(fig.data[0].y) == 2
 
 
 def test_weekly_tone_figure_uses_the_all_volcanoes_series(gold_folder):
