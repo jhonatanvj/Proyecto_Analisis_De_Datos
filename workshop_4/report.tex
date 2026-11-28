@@ -3,7 +3,9 @@
 %
 %  Assembled by Part 2 (Julián Pulido) from the sections of the three parts.
 %  Build: pdflatex report.tex (twice), from this folder. Figures are read from figures/.
-%  Sections still to be filled are marked with \pending{owner}{source file}.
+%  Every section is written. The two Part 3 sections (storytelling dashboard, challenges) were drafted by
+%  Part 2 from the Part 3 code and are marked '% Drafted by Part 2'; Part 3 reviews them.
+%  \pending{owner}{source file} is kept for any section that has to be filled again.
 \documentclass[11pt,a4paper]{article}
 
 \usepackage[utf8]{inputenc}
@@ -45,6 +47,11 @@
 \renewcommand{\headrulewidth}{0.4pt}
 
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% Long file, column and test names in \texttt{} may break after an underscore, and paragraphs get a
+% little extra stretch, so code names do not run into the margin
+\renewcommand{\_}{\textunderscore\allowbreak}
+\setlength{\emergencystretch}{3em}
 
 % Finds images in figures/ or the root folder; renders a placeholder only if missing
 \newcommand{\shot}[3]{%
@@ -337,7 +344,7 @@ without horizontal scrolling. From top to bottom:
 \end{enumerate}
 
 \subsection{Component list}
-\begin{longtable}{L{3.2cm}L{2.2cm}L{2.6cm}L{6.4cm}}
+\begin{longtable}{L{3.7cm}L{2.2cm}L{2.6cm}L{5.9cm}}
 \toprule
 \textbf{Component (id)} & \textbf{Type} & \textbf{Gold section} & \textbf{What it answers / interaction}\\
 \midrule\endhead
@@ -429,7 +436,85 @@ The full suite passes (216 tests).
 
 %==============================================================================
 \section{Storytelling dashboard documentation}\label{sec:storytelling}
-\pending{Part 3 (Juan Sebastián)}{dashboard/storytelling_app.py, notebooks/07_storytelling_figures.ipynb}
+% Drafted by Part 2 (report assembly) from dashboard/storytelling_app.py, gold/storytelling.py,
+% tests/test_storytelling_dashboard.py and notebooks/07_storytelling_figures.ipynb (branch w4-storytelling,
+% commit 70cc9e9). To be reviewed by Part 3 (Juan Sebastián).
+
+The storytelling dashboard (\texttt{dashboard/storytelling\_app.py}, \texttt{http://localhost:8051})
+answers one question for the emergency-management analyst of Workshop~1: \emph{which US volcanoes show
+unusual activity, and is it building or fading?} It reads only the newest
+\texttt{datalake\_gold/storytelling\_*.parquet}, in plain language and without pipeline jargon; the
+technical view of the same data is the governance dashboard (Section~\ref{sec:governance}).
+
+\shot{storytelling_dashboard.png}{0.85}{Storytelling dashboard at \texttt{localhost:8051}: narrative
+card, tone distribution, filters, tone trajectory, weekly volume, top keywords, API vs.\ scraping and the
+Volcano Activity Indicator panel.}
+
+\subsection{Story flow and layout}
+The page follows the story flow agreed in the plan: \emph{overview} $\rightarrow$ \emph{what changed this
+week} $\rightarrow$ \emph{which volcanoes and why}.
+\begin{enumerate}
+  \item \textbf{Overview}: the \emph{Operational Narrative Summary} card, next to the distribution of the
+        activity tone of all notices.
+  \item \textbf{What changed}: three filters (tone scope: all volcanoes or one volcano with an elevated
+        alert; volume source; single keywords or bigrams), then the weekly tone trajectory, the weekly
+        volume per source, the most frequent terms coloured by tone and the comparison of the two text
+        sources.
+  \item \textbf{Which volcanoes and why}: the Volcano Activity Indicator panel of Part~1
+        (Section~\ref{sec:vai}): map of the official alert levels, ranking by indicator filterable by
+        region, and the history of one volcano with its eruptions.
+\end{enumerate}
+
+\subsection{Gold additions}
+Three sections were added to \texttt{gold/storytelling.py} for the dashboard:
+\begin{itemize}
+  \item \texttt{tone\_distribution}: notices per tone label and their share. The label comes from the
+        domain lexicon score of each notice summary (Workshop~3): escalating above $+0.15$, calming below
+        $-0.15$, stable in between.
+  \item \texttt{volume\_activity}: records per week and source (HANS API notices, scraped Volcano
+        Updates, earthquakes near a volcano).
+  \item \texttt{narrative\_highlights}: the few numbers the narrative card quotes: mean tone of the latest
+        week and its change against the previous week, the volcano with the most escalating language that
+        week, and the number of volcanoes with an elevated official alert.
+\end{itemize}
+
+\subsection{Component list and user-story mapping}
+\begin{longtable}{L{3.8cm}L{2.2cm}L{2.9cm}L{1.5cm}L{3.9cm}}
+\toprule
+\textbf{Component (id)} & \textbf{Type} & \textbf{Gold section} & \textbf{Story} & \textbf{What it tells the analyst}\\
+\midrule\endhead
+Narrative card (\texttt{narrative-card}) & Text card with a badge & \texttt{narrative\_highlights}, \texttt{tone\_distribution}, \texttt{alerts\_breakdown} & US1, US7 & Elevated alerts now, whether the language of the latest week is building or fading (badge \emph{Unrest Building}, \emph{Steady Posture} or \emph{Unrest Fading}), the volcano to watch\\
+Tone distribution (\texttt{tone-donut}) & Donut, three categories & \texttt{tone\_distribution} & context & Share of escalating, stable and calming notices since 2010\\
+Tone trajectory (\texttt{tone-trend}) & Lines + threshold bands & \texttt{tone\_weekly} & US7 & Weekly tone of all volcanoes or of one volcano, lexicon next to the VADER baseline\\
+Weekly volume (\texttt{volume-activity}) & Lines, peaks marked & \texttt{volume\_activity} & US2, US3 & Records per week and source, with the activity peaks annotated\\
+Top keywords (\texttt{top-keywords}) & Horizontal bars & \texttt{top\_keywords} & context & The 15 most frequent terms or bigrams, coloured by their mean tone\\
+API vs.\ scraping (\texttt{source-comparison}) & Grouped bars, two panels & \texttt{source\_comparison} & context & Text length and tone of HANS notices against the scraped Volcano Updates page\\
+VAI panel (Part~1) & Map, ranked bars, history & \texttt{vai\_current}, \texttt{vai\_weekly}, \texttt{volcano\_map}, \texttt{eruption\_history} & US1, US3, US5, US6, US7, US8 & Which volcanoes are unusual compared with their own past, and since when\\
+\bottomrule
+\end{longtable}
+
+\subsection{Narrative rationale}
+\begin{itemize}
+  \item \textbf{Words before charts.} The narrative card is generated from Gold on every refresh and says
+        in four sentences what the charts below show, so an analyst with two minutes still gets the
+        message.
+  \item \textbf{One colour code for tone everywhere}: calming green, stable grey, escalating red
+        (\texttt{TONE\_COLORS} of the shared theme), in the donut, the trajectory bands and the keyword bars.
+  \item \textbf{The indicator is not a forecast}, and the panel says so above the map, next to the official
+        USGS alert levels, which are shown unchanged.
+  \item The donut is the only circular chart in the project, kept because it has exactly three categories
+        that add up to a whole; every comparison with more categories uses bars.
+\end{itemize}
+
+\subsection{Testing}
+\texttt{tests/test\_storytelling\_dashboard.py} checks the narrative card with real Gold rows and its
+fallback without data, that every storytelling figure has a title and the source annotation, and that the
+layout contains the filters and the cards. Static versions of the main charts are drawn with Seaborn in
+\texttt{notebooks/07\_storytelling\_figures.ipynb} (Figures~\ref{fig:story_tone_trajectory_distribution.png}--\ref{fig:story_source_comparison_volume.png}).
+
+\shot{story_tone_trajectory_distribution.png}{0.95}{Weekly activity tone (lexicon vs.\ VADER) and tone distribution of the notices.}
+\shot{story_top_keywords_by_tone.png}{0.95}{Most frequent terms and bigrams, coloured by their mean activity tone.}
+\shot{story_source_comparison_volume.png}{0.95}{HANS API vs.\ scraped Volcano Updates: text length, tone and weekly volume.}
 
 %==============================================================================
 \section{Visualization design decisions}\label{sec:design}
@@ -452,7 +537,7 @@ more accurately than angles, as the workshop recommends.
 
 \subsection{Colour}
 Both dashboards and the report figures use one palette, defined once in
-\texttt{dashboard/common/theme.py}: Okabe--Ito, designed to stay distinguishable for the common types of
+\texttt{dashboard/\allowbreak common/\allowbreak theme.py}: Okabe--Ito, designed to stay distinguishable for the common types of
 colour blindness. Pass is green (\#009E73) and warning vermillion (\#D55E00), always with a text label.
 The activity tone of the storytelling dashboard keeps the workshop rule: calming green, stable grey,
 escalating red. Alert levels and aviation colour codes keep their USGS meaning.
@@ -494,7 +579,24 @@ the main ones.
 
 %==============================================================================
 \section{Challenges and resolutions}\label{sec:challenges}
-\pending{Part 3 (Juan Sebastián)}{workshop_4/plan.md, Part 3 item 6}
+% Drafted by Part 2 (report assembly) from the work of the three parts; to be reviewed by Part 3.
+
+\begin{longtable}{L{4.2cm}L{6.4cm}L{3.6cm}}
+\toprule
+\textbf{Challenge} & \textbf{Resolution} & \textbf{Status}\\
+\midrule\endhead
+Silver files written before the Workshop~4 contract (six new columns) & The schema-compliance KPI showed 0\,\%; the two monthly GVP sources were reprocessed from Bronze with \texttt{scripts/reprocess\_silver\_source.py} & Resolved (100\,\%)\\
+Freshness warned all the time & Bronze writes only when a source changes and HANS does not publish every hour; a source is now fresh below one day (or twice its schedule) and the hourly gaps of the feed are checked by ingestion frequency & Resolved\\
+Gold summary took minutes in Spark & The KPI summary re-read the plan of eleven indicators; \texttt{localCheckpoint()} materialises the rows once (142\,s $\rightarrow$ 22\,s in the test) & Resolved\\
+Storytelling Spark tests failed outside Docker & Spark runs the tone UDFs in separate Python workers that did not see \texttt{src/}; \texttt{tests/conftest.py} now exports \texttt{PYTHONPATH} and \texttt{PYSPARK\_PYTHON} & Resolved\\
+Java 25 on one laptop is not supported by Spark 3.5 & Spark tests skip themselves on such a host and run inside the Airflow image (Java 17) & Worked around\\
+7.5\,GB of RAM for Airflow, two databases, Spark and the tests & The two Gold tasks run one after the other; long test runs get a time limit; unused services are stopped while testing & Worked around\\
+Three parts building charts in parallel & The long Gold contract (one \texttt{section} per chart) let each part add sections without touching the others' code; the branches merged without conflicts & Resolved\\
+Duplicate earthquakes in Silver (feed and FDSN hash the same event differently) & Detected by the duplicate-rate KPI (warning); Gold counts the newest version only, so the dashboards are not affected; fix proposed for Silver & Open (Part~1)\\
+A week without ingestion (stack stopped 21--27 November) & Visible as an ingestion-frequency warning; documented instead of hidden & Clears after a week of normal runs\\
+Tone labels lean to ``escalating'' (78.3\,\% of notices) & The $\pm0.15$ lexicon threshold treats ordinary monitoring vocabulary (\emph{lava}, \emph{eruption}, \emph{activity}) as escalation; the VADER baseline is shown next to it so the reader can compare & Open: calibrating the thresholds per percentile is the next step\\
+\bottomrule
+\end{longtable}
 
 %==============================================================================
 \section{Reproducibility evidence}\label{sec:reproducibility}
@@ -522,17 +624,18 @@ The README (\emph{Getting started on your own machine}) lists every step; in sho
 \subsection{Checks}
 \begin{itemize}
   \item A fresh clone into a short path, with a new virtual environment, installs
-        \texttt{requirements.txt} and passes the test suite. On the host, the 32 Spark tests are skipped
-        (Java 25 is not supported by Spark 3.5); they run inside the Airflow container, which has Java 17.
-        % TODO update the counts after the final end-to-end run (host: 185 passed, 32 skipped on 2026-11-27)
+        \texttt{requirements.txt} and passes the test suite. With the three parts merged, a host with
+        Java 17 runs the whole suite: 219 passed, 1 skipped (2026-11-28). On a host with Java 25, which
+        Spark 3.5 does not support, the Spark tests skip themselves and run inside the Airflow container,
+        which has Java 17.
   \item Library versions are bounded below the next major release (\texttt{pandas<4}, \texttt{numpy<3},
         \texttt{dash<5}), and the suite passes with the newest pandas 3 release.
 \end{itemize}
 
 \shot{airflow_dags_w4.png}{0.95}{Airflow: the Bronze, Silver and Gold DAGs after the end-to-end run.}
 \shot{airflow_gold_grid_w4.png}{0.95}{Airflow: grid of the \texttt{gold\_processing} run that wrote the Gold files shown in the dashboards.}
-\shot{governance_dashboard.png}{0.95}{Governance dashboard at \texttt{localhost:8050}.}
-\shot{storytelling_dashboard.png}{0.95}{Storytelling dashboard at \texttt{localhost:8051}.}
+\shot{governance_dashboard.png}{0.75}{Governance dashboard at \texttt{localhost:8050}.}
+\shot{storytelling_dashboard.png}{0.55}{Storytelling dashboard at \texttt{localhost:8051}.}
 \shot{storytelling_vai_panel.png}{0.95}{Volcano Activity Indicator panel: map, ranking by region and history of one volcano.}
 
 %==============================================================================

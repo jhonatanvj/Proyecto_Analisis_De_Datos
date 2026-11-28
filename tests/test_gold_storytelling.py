@@ -125,4 +125,8 @@ def test_build_storytelling_all_sections(spark):
         "source_comparison",
         "earthquakes_baseline",
         "alerts_breakdown",
+        # Workshop 4, Part 3: sections behind the storytelling dashboard
+        "tone_distribution",
+        "volume_activity",
+        "narrative_highlights",
     }

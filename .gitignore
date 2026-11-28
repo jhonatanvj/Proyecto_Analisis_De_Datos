@@ -31,3 +31,9 @@ Talleres_proyecto/
 # local notes for the AI assistant, not part of the project
 CLAUDE.md
 .claude/
+
+# LaTeX build files of the workshop reports (only report.tex and report.pdf are kept)
+*.aux
+*.log
+*.out
+*.toc
