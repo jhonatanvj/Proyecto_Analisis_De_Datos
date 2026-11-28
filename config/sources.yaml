@@ -25,6 +25,20 @@ event_matching:                       # event_group rules (storage/event_groups.
   volcano_episode:                    # alert notices, eruptions and nearby earthquakes of one volcano in one ISO week
     anchor_types: [alert_notice, eruption]
 
+governance:                           # Workshop 4: pass / warn status of the governance dashboard
+  # One threshold per KPI, applied to its headline value (gold/governance.py, section kpi_summary).
+  # rule max: pass when value <= threshold; rule min: pass when value >= threshold.
+  # Baselines measured on 2026-11-19 (notebooks/03_data_quality_findings.ipynb, finding ids F01-F24).
+  thresholds:
+    null_rate:           {rule: max, value: 5.0}     # mean % empty per field; baseline 3.6 % (known gaps F01-F04)
+    duplicate_rate:      {rule: max, value: 0.0}     # % exact copies in Silver; must be 0 (F08: 0.095 %, a bug)
+    schema_compliance:   {rule: min, value: 100.0}   # lowest % of conforming files of a topic; baseline 100 %
+    quarantine_rate:     {rule: max, value: 2.0}     # % quarantined, all sources; baseline 0.68 % (business rules)
+    outlier_rate:        {rule: max, value: 15.0}    # highest % outliers of a field; baseline 9.4 % (depth)
+    text_length:         {rule: max, value: 0.1}     # % notices with encoding errors; baseline 0.054 % (F21)
+    freshness:           {rule: min, value: 100.0}   # % sources with a file younger than max(24 h, 2 x schedule)
+    ingestion_frequency: {rule: min, value: 80.0}    # usgs_feed: % of the last 7 full days' hours with a new file
+
 indicator:                            # Volcano Activity Indicator (VAI), preliminary - Workshop #4
   weights: {reported: 0.45, seismic: 0.35, eruptive: 0.20}
   # R = official USGS alert level (HANS); the aviation colour code is shown, not scored separately
