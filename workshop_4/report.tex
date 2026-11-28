@@ -1,0 +1,317 @@
+%  Workshop No. 4 - Interactive Dashboards with Plotly Dash
+%  Volcanic Activity Monitoring System (United States), Team 6
+%
+%  Assembled by Part 2 (Julián Pulido) from the sections of the three parts.
+%  Build: pdflatex report.tex (twice), from this folder. Figures are read from figures/.
+%  Sections still to be filled are marked with \pending{owner}{source file}.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\usepackage[a4paper,margin=2.3cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tabularx}
+
+\graphicspath{{figures/}{./}}
+
+\hypersetup{
+  pdftitle={Workshop 4 - Volcanic Activity Monitoring: Interactive Dashboards with Plotly Dash},
+  pdfauthor={Team 6 - Universidad Distrital Francisco Jose de Caldas},
+  pdfsubject={Data Analysis Programming 2026-II, Workshop No. 4}
+}
+
+\captionsetup{font=small,labelfont=bf}
+\setlist[itemize]{itemsep=2pt,topsep=3pt}
+\setlist[enumerate]{itemsep=2pt,topsep=3pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Workshop 4 --- Interactive Dashboards with Plotly Dash}
+\rhead{\small Team 6}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% Finds images in figures/ or the root folder; renders a placeholder only if missing
+\newcommand{\shot}[3]{%
+  \begin{figure}[htbp]\centering
+  \IfFileExists{figures/#1}{\includegraphics[width=#2\linewidth]{figures/#1}}{%
+    \IfFileExists{#1}{\includegraphics[width=#2\linewidth]{#1}}{%
+      \fbox{\parbox[c][3.2cm][c]{0.85\linewidth}{\centering\small Image pending: \texttt{\detokenize{#1}}}}}}
+  \caption{#3}\label{fig:#1}
+  \end{figure}}
+
+% A section another part still has to deliver (removed when its text is pasted in)
+\newcommand{\pending}[2]{%
+  \begin{center}\fcolorbox{orange!70!black}{orange!8}{\parbox{0.9\linewidth}{\small
+  \textbf{Pending} --- section owned by #1. Source: \texttt{\detokenize{#2}}.}}\end{center}}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+{\large Universidad Distrital Francisco José de Caldas\\ School of Engineering --- Computer Engineering\par}
+\vspace{1.2cm}
+{\Large Data Analysis Programming 2026-II\par}
+\vspace{1.5cm}
+{\huge\bfseries Workshop No.~4\\[4pt] Interactive Dashboards with Plotly Dash\par}
+\vspace{0.8cm}
+{\Large Volcanic Activity Monitoring System (United States)\par}
+\vspace{1.5cm}
+{\large Team 6\par}
+\vspace{0.4cm}
+\begin{tabular}{ll}
+20231020006 & Juan Sebastián Rangel Pinto\\
+20231020055 & Jhonatan David Vergara Jiménez\\
+20231020064 & Julián David Pulido Carreño\\
+\end{tabular}
+\vfill
+{\large Professor: Eng. Carlos Andrés Sierra, M.Sc.\par}
+\vspace{0.3cm}
+{\large Bogotá, \today\par}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+%==============================================================================
+\section{Executive summary}\label{sec:summary}
+\pending{Part 1 (Jhonatan)}{workshop_4/plan.md, Part 1 item 8}
+
+%==============================================================================
+\section{Integration adjustments}\label{sec:integration}
+\pending{Part 1 (Jhonatan)}{workshop_4/integration_adjustments.md}
+
+%==============================================================================
+\section{Volcano Activity Indicator}\label{sec:vai}
+\pending{Part 1 (Jhonatan)}{workshop_4/vai_indicator.md and notebooks/05_vai_validation.ipynb}
+
+%==============================================================================
+\section{Governance dashboard documentation}\label{sec:governance}
+
+The governance dashboard (\texttt{dashboard/governance\_app.py}, \texttt{http://localhost:8050}) shows the
+data quality of the pipeline to the \emph{data team}: the people who run the DAGs and must decide whether
+the data is fit to feed the storytelling dashboard. It answers three questions in this order:
+\emph{is everything within its threshold?} (KPI cards and summary table), \emph{where is the problem?}
+(charts per field, numeric field and source) and \emph{is every source still arriving?} (data-health
+table, user story US4 of Workshop~1).
+
+It reads only the newest \texttt{datalake\_gold/governance\_*.parquet} with \texttt{pd.read\_parquet()}
+through the shared loader of Part~1; every number is computed in the Gold layer with PySpark and the app
+only filters, sorts and formats. It starts with \texttt{python -m dashboard.governance\_app} or as the
+\texttt{governance-dashboard} service of \texttt{docker compose up}, and refreshes with the
+\emph{Refresh data} button or every five minutes.
+
+\shot{governance_dashboard.png}{0.92}{Governance dashboard at 1920\,px width with the Gold file of
+2026-11-28 02:56 UTC: header, filters, KPI cards, null and outlier rates, volume per source, records per
+topic, quality summary table and data health per source.}
+
+\subsection{Layout}
+The page is a Bootstrap grid (Dash Bootstrap Components, theme Flatly) that fits a 1920$\times$1080 screen
+without horizontal scrolling. From top to bottom:
+\begin{enumerate}
+  \item \textbf{Header} (shared with the storytelling app): project title, dashboard name, topic angle,
+        team and the \texttt{generated\_utc} time of the Gold file shown.
+  \item \textbf{Controls}: refresh button, and two filters, \emph{Source} and \emph{Silver topic}.
+  \item \textbf{Six KPI cards}: total records, null rate, duplicate rate, schema compliance, quarantine
+        rate and freshness, each with its value, a \emph{Pass}/\emph{Warning} badge and its threshold.
+  \item \textbf{Two charts per row}: null rate per field $|$ outlier rate per numeric field; records per
+        week and source $|$ records stored per topic.
+  \item \textbf{Two tables}: quality summary (every KPI against its threshold) $|$ data health per source.
+\end{enumerate}
+
+\subsection{Component list}
+\begin{longtable}{L{3.2cm}L{2.2cm}L{2.6cm}L{6.4cm}}
+\toprule
+\textbf{Component (id)} & \textbf{Type} & \textbf{Gold section} & \textbf{What it answers / interaction}\\
+\midrule\endhead
+KPI cards (\texttt{kpi-cards}) & Bootstrap cards & \texttt{kpi\_summary} & Is each headline KPI within its threshold? Badge with text, not colour only\\
+Null rate (\texttt{null-rate}) & Horizontal bars & \texttt{null\_rate} & Which fields are the emptiest? 20 worst fields, sorted by severity; \emph{topic} filter; hover gives the exact \%\\
+Outlier rate (\texttt{outlier-rate}) & Grouped bars & \texttt{outlier\_rate} & Outliers per numeric field with the KPI criterion (per-volcano fences) next to Silver's per-file flags, and the threshold line\\
+Volume (\texttt{volume-over-time}) & Lines, log axis & \texttt{volume\_weekly} & Records per week and source since 2010; \emph{source} filter; zoom and hover per week\\
+Records per topic (\texttt{records-per-topic}) & Horizontal bars, log axis & \texttt{volume\_total} & How many records each Silver topic and the quarantine hold\\
+Quality summary (\texttt{quality-summary}) & Table & \texttt{kpi\_summary} & All nine indicators: what is measured, value, threshold, status\\
+Data health (\texttt{data-health}) & Table & \texttt{data\_health}, \texttt{freshness} & Per source: newest file, file age, watermark age, records in Silver, rejected records; \emph{source} filter\\
+\bottomrule
+\end{longtable}
+
+\subsection{KPI mapping}
+Each KPI of Workshop~3 is shown with one headline value, computed in Gold (section \texttt{kpi\_summary})
+from the rows of the other indicators, so the cards, the table and the charts can never disagree. The
+thresholds are configuration (\texttt{config/sources.yaml}, \texttt{governance.thresholds}) and each one
+is grounded in the baseline measured in Workshop~3 (findings F01--F24).
+
+\begin{longtable}{L{2.7cm}L{4.1cm}L{1.9cm}L{1.5cm}L{4.0cm}}
+\toprule
+\textbf{KPI} & \textbf{Headline value} & \textbf{Threshold} & \textbf{Value} & \textbf{Why this threshold}\\
+\midrule\endhead
+Null rate & mean \% of empty values per field & $\le 5\,\%$ & 4.1\,\% \checkmark & baseline 3.6\,\% from known structural gaps (F01--F04); 4.1\,\% with the Workshop~4 columns (see below)\\
+Duplicate rate & \% exact copies in Silver & $\le 0\,\%$ & 0.089\,\% \textbf{!} & must be 0; the feed$\leftrightarrow$FDSN hash bug (F08) is still open\\
+Schema compliance & lowest \% of files matching the contract, per topic & $\ge 100\,\%$ & 100\,\% \checkmark & every file must follow the contract (it caught a schema drift, see below)\\
+Quarantine rate & \% of processed records rejected & $\le 2\,\%$ & 0.70\,\% \checkmark & baseline 0.68\,\%, all business rules\\
+Outlier rate & highest \% of outliers of a field & $\le 15\,\%$ & 9.4\,\% \checkmark & baseline 9.4\,\% (depth, real slab events)\\
+Encoding errors (text\_length) & \% of notices with garbled text & $\le 0.1\,\%$ & 0.054\,\% \checkmark & baseline 0.054\,\% (F21)\\
+Freshness & \% of sources with a file younger than a day (2$\times$ schedule if longer) & $\ge 100\,\%$ & 100\,\% \checkmark & no source may stay silent for more than a day\\
+Ingestion frequency & \% of the last 7 days' hours with a new \texttt{usgs\_feed} file & $\ge 80\,\%$ & 0\,\% \textbf{!} & the feed changes every hour\\
+Total records & records stored in Silver & --- & 311,083 & context, no threshold\\
+\bottomrule
+\end{longtable}
+
+\noindent The two warnings (\textbf{!}) are real findings, not defects of the dashboard:
+\begin{itemize}
+  \item \textbf{Duplicate rate}: the dedup index of Silver keeps only the last hash per earthquake, and the
+        feed and FDSN hash the same event differently (Workshop~3, F07--F08).
+  \item \textbf{Ingestion frequency}: the Docker stack was stopped from 21 to 27 November, so no feed file
+        arrived in the last seven full days before the run.
+\end{itemize}
+
+\paragraph{The schema-compliance KPI at work.} On the first run of the dashboard (Gold of 2026-11-28
+02:42 UTC) schema compliance was \textbf{0\,\%}: the Silver files of \texttt{volcanoes} and
+\texttt{eruptions} had been written on 2026-11-17, before Workshop~4 added six columns to their contract
+(\texttt{subregion}, \texttt{observatory}, \texttt{usgs\_region}, \texttt{end\_time},
+\texttt{end\_precision}, \texttt{is\_continuing}; Section~\ref{sec:integration}). The GVP catalogue is
+downloaded once a month, so those files were never rewritten. The two sources were reprocessed with
+\texttt{scripts/reprocess\_silver\_source.py} (Silver DAG paused meanwhile) and the next Gold run gave
+100\,\% in all seven topics. The new columns also raised the null rate from 3.6\,\% to 4.1\,\%, an expected
+change: \texttt{eruptions.end\_time} is empty for 69.7\,\% of the eruptions, whose end GVP does not know,
+and \texttt{volcanoes.observatory} for the 7.3\,\% of volcanoes outside the HANS list.
+
+\subsection{Gold additions for the dashboard}
+\begin{itemize}
+  \item \texttt{kpi\_summary}: per KPI the headline value (the metric name says what it is, e.g.
+        \texttt{mean\_pct\_null}), \texttt{threshold\_max} or \texttt{threshold\_min} and \texttt{status}
+        (1 pass, 0 warning).
+  \item \texttt{data\_health} (US4): per source the records in Silver, the rejected records, the time of the
+        newest Bronze file and the watermark age, measured as the age of the newest source timestamp stored
+        in Silver, so Gold still reads Silver only.
+  \item \texttt{volume\_weekly} gained the metric \texttt{records\_by\_source}, because the workshop asks
+        for volume per source and \texttt{earthquakes} mixes two sources.
+  \item Performance: \texttt{kpi\_summary} reads the Gold rows about ten times; materialising them with
+        \texttt{localCheckpoint()} cut the Spark test on the Silver samples from 142\,s to 22\,s.
+\end{itemize}
+
+\subsection{Design rationale}
+\begin{itemize}
+  \item \textbf{Overview first, then detail.} Cards and the summary table answer ``is anything wrong?''
+        in one glance; the charts and the data-health table explain where.
+  \item \textbf{One source of truth.} Status is computed in Gold, not in the browser, so the dashboard, the
+        report figures and any other consumer read the same verdict.
+  \item \textbf{Thresholds are configuration}, versioned with the code, each with its baseline in a comment.
+  \item \textbf{Status never relies on colour alone}: every badge says \emph{Pass}, \emph{Warning} or
+        \emph{Info}.
+  \item \textbf{Robust to missing data}: with an empty \texttt{datalake\_gold/}, or a Gold file written
+        before a section existed, every component shows a message instead of failing.
+\end{itemize}
+
+\subsection{Testing}
+\texttt{tests/test\_governance\_dashboard.py} (12 tests) builds every component from a small Gold file with
+known values: card values and badges, sorting and filters of the charts, axis titles and the source note,
+the fallback for older Gold files, the empty-Gold case and the callback that fills the eight outputs.
+\texttt{tests/test\_gold\_governance.py} adds three Spark tests for \texttt{data\_health},
+\texttt{kpi\_summary} (including cases that must warn) and the thresholds in \texttt{sources.yaml}.
+The full suite passes (216 tests).
+
+%==============================================================================
+\section{Storytelling dashboard documentation}\label{sec:storytelling}
+\pending{Part 3 (Juan Sebastián)}{dashboard/storytelling_app.py, notebooks/07_storytelling_figures.ipynb}
+
+%==============================================================================
+\section{Visualization design decisions}\label{sec:design}
+
+\subsection{Chart types}
+\begin{longtable}{L{3.6cm}L{3.0cm}L{7.6cm}}
+\toprule
+\textbf{Question} & \textbf{Chart} & \textbf{Why}\\
+\midrule\endhead
+Which fields are the emptiest? & Horizontal bars, sorted & The answer is a ranking and the labels (\texttt{topic.column}) are long: horizontal bars keep them readable and the order shows severity\\
+How do two criteria compare per field? & Grouped bars + threshold line & Side-by-side bars make the gap between the per-volcano KPI and Silver's per-file flags visible (F19)\\
+How does volume change over 16 years? & Lines & A time series; one line per source\\
+Several sources of very different size & Log axis, ticks at powers of ten & Earthquakes ($\sim$1,000/week) and notices ($\sim$20/week) differ by two orders of magnitude; a linear axis flattens the smaller source\\
+Is each KPI within its threshold? & Cards + table & Exact values matter more than shape; a table holds all nine KPIs with units\\
+How old is each source's data? (report) & Heatmap, neutral blues & Many sources $\times$ two ages at a glance; colour is not red because an age is only bad relative to its schedule\\
+\bottomrule
+\end{longtable}
+\noindent No pie charts: every categorical comparison has more than three categories, and bars are read
+more accurately than angles, as the workshop recommends.
+
+\subsection{Colour}
+Both dashboards and the report figures use one palette, defined once in
+\texttt{dashboard/common/theme.py}: Okabe--Ito, designed to stay distinguishable for the common types of
+colour blindness. Pass is green (\#009E73) and warning vermillion (\#D55E00), always with a text label.
+The activity tone of the storytelling dashboard keeps the workshop rule: calming green, stable grey,
+escalating red. Alert levels and aviation colour codes keep their USGS meaning.
+
+\subsection{Layout and interaction}
+\begin{itemize}
+  \item A shared header and Plotly template make the two apps look like one product.
+  \item Every chart has a descriptive title, axis titles with units and a ``Source:'' note
+        (\texttt{style\_figure}); hover gives exact values, the toolbar zooms and resets.
+  \item Filters only appear where the data has that breakdown, and a line under them says which charts
+        they affect.
+  \item A grid of at most two charts per row keeps the page readable at 1080p without horizontal scrolling.
+\end{itemize}
+
+\subsection{Decisions changed after reviewing the screenshots}
+\begin{itemize}
+  \item The volume chart first had a range slider; it covered the source note and pushed the axis title
+        down, and the toolbar already zooms, so it was removed.
+  \item The log axis first labelled 2, 5, 100, 2, 5\,\ldots; ticks at powers of ten only are easier to read.
+  \item Freshness first required a new file within twice the schedule interval (2\,h for hourly sources)
+        and warned all the time: Bronze writes a file only when the source changed (F23) and HANS does not
+        publish every hour. A source is now fresh when its newest file is younger than a day, or than twice
+        its schedule when that is longer; the hourly gaps of the feed are what ingestion frequency checks.
+  \item The data-health heatmap of the report first used a red scale and painted the monthly GVP catalogue
+        dark red at 265\,h, a false alarm; it now uses neutral blues and leaves the verdict to the KPI.
+\end{itemize}
+
+\subsection{Static figures for the report}
+\texttt{notebooks/06\_governance\_figures.ipynb} draws Seaborn versions of the governance charts from the
+same Gold file and palette. Figures~\ref{fig:gov_kpi_summary.png}--\ref{fig:gov_data_health.png} show
+the main ones.
+
+\shot{gov_kpi_summary.png}{0.95}{Governance KPIs against their thresholds (Gold of 2026-11-28 02:56 UTC).}
+\shot{gov_null_rate.png}{0.7}{Share of empty values per field, coloured by Silver topic.}
+\shot{gov_outlier_rate.png}{0.6}{Outlier rate per numeric field: per-volcano fences (KPI) vs.\ Silver flags.}
+\shot{gov_volume_weekly.png}{0.95}{Records per week and source since 2010 (log scale).}
+\shot{gov_duplicates.png}{0.75}{Duplicates before and after deduplication.}
+\shot{gov_data_health.png}{0.95}{Age of each source's data, and records and rejects per source (US4).}
+
+%==============================================================================
+\section{Challenges and resolutions}\label{sec:challenges}
+\pending{Part 3 (Juan Sebastián)}{workshop_4/plan.md, Part 3 item 6}
+
+%==============================================================================
+\section{Reproducibility evidence}\label{sec:reproducibility}
+\pending{Part 1 (Jhonatan)}{Airflow screenshots of the three DAGs, both dashboards in a browser, README setup}
+
+%==============================================================================
+\section*{References}
+\addcontentsline{toc}{section}{References}
+\begin{itemize}
+  \item Okabe, M. and Ito, K. (2008). \emph{Color Universal Design (CUD): How to make figures and
+        presentations that are friendly to colorblind people}. https://jfly.uni-koeln.de/color/
+  \item Shneiderman, B. (1996). The eyes have it: a task by data type taxonomy for information
+        visualizations. \emph{Proc. IEEE Symposium on Visual Languages}, 336--343.
+  \item Few, S. (2006). \emph{Information Dashboard Design}. O'Reilly.
+  \item Plotly Technologies. Dash and Plotly Python documentation. https://dash.plotly.com,
+        https://plotly.com/python/
+  \item Waskom, M. (2021). seaborn: statistical data visualization. \emph{Journal of Open Source Software},
+        6(60), 3021.
+  \item DAMA International (2017). \emph{DAMA-DMBOK: Data Management Body of Knowledge}, 2nd ed.
+\end{itemize}
+
+\end{document}
